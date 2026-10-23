@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Test and build installable APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          # Pin the same command-line tool generation used by the local build.
+          cmdline-tools-version: '11076708'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
+
+      - name: Verify counting logic
+        run: bash scripts/test-counting.sh
+
+      - name: Compile, package and verify APK
+        run: bash scripts/build-apk.sh
+
+      - name: Upload downloadable APK
+        id: apk
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: build/sdk/TimeLens-0.1.0-debug.apk
+          # A direct .apk download is easier to install on an Android phone.
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Add download link to run summary
+        env:
+          APK_URL: ${{ steps.apk.outputs.artifact-url }}
+        run: |
+          printf '### TimeLens APK\n\n[Download the APK](%s)\n\nInstall, grant Usage Access and Display over other apps, then tap Start floating timer.\n\nThis is a personal debug build; device testing is still required.\n' "$APK_URL" >> "$GITHUB_STEP_SUMMARY"

@@ -19,7 +19,12 @@ public final class MainActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor();
     private final Map<String,AppRow> rows=new LinkedHashMap<>();
-    private LinearLayout page,content,appList;
+    private LinearLayout page,content,appList,navigation;
+    private ScrollView scroll;
+    private PermissionState permissions;
+    private boolean setupVisible, dismissedSetupThisVisit, externalSettings;
+    private boolean usageSettingsPending, showRecovery, notificationsSkipped, notificationRequestInFlight;
+    private String permissionFeedback;
     private TextView todayTotal,currentApp,status,toggle,empty;
     private Ring ring;
     private UsageRepository repository;
@@ -30,10 +35,25 @@ public final class MainActivity extends Activity {
     private final List<TextView> tabs=new ArrayList<>();
     private final List<ImageView> tabIcons=new ArrayList<>();
     private final List<LinearLayout> tabSurfaces=new ArrayList<>();
-    private final BroadcastReceiver timerState=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){if(visible)showTab(tab);}};
+    private final BroadcastReceiver timerState=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){if(visible)renderCurrent();}};
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state); repository=UsageRepository.get(this);
+        super.onCreate(state);
+        Ui.configure(this);
+        getWindow().setStatusBarColor(Ui.BG);
+        getWindow().setNavigationBarColor(Ui.BG);
+        getWindow().getDecorView().setSystemUiVisibility(Ui.dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        repository=UsageRepository.get(this);
+        if(state!=null){
+            setupVisible=state.getBoolean("setup");
+            dismissedSetupThisVisit=state.getBoolean("dismissed");
+            externalSettings=state.getBoolean("external");
+            usageSettingsPending=state.getBoolean("usagePending");
+            showRecovery=state.getBoolean("recovery");
+            notificationsSkipped=state.getBoolean("notificationsSkipped");
+            notificationRequestInFlight=state.getBoolean("requestInFlight");
+            permissionFeedback=state.getString("permissionFeedback");
+        }
         LinearLayout root=Ui.column(this); root.setBackgroundColor(Ui.BG);
         root.setOnApplyWindowInsetsListener((v,insets)->{
             v.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom());return insets;
@@ -41,41 +61,120 @@ public final class MainActivity extends Activity {
         LinearLayout brand=Ui.row(this);brand.setPadding(dp(24),dp(18),dp(24),dp(12));
         ImageView mark=new ImageView(this);mark.setImageResource(R.drawable.ic_launcher);brand.addView(mark,new LinearLayout.LayoutParams(dp(30),dp(30)));
         TextView logo=Ui.text(this,"TimeLens",23,Ui.INK,true);logo.setPadding(dp(10),0,0,0);brand.addView(logo,new LinearLayout.LayoutParams(0,-2,1));
-        LinearLayout privacy=Ui.row(this);privacy.setPadding(dp(10),dp(8),dp(10),dp(8));privacy.setBackground(Ui.rounded(0xff223228,20,this));
-        ImageView shield=new ImageView(this);shield.setImageResource(R.drawable.ic_shield);shield.setImageTintList(android.content.res.ColorStateList.valueOf(Ui.LIME));privacy.addView(shield,new LinearLayout.LayoutParams(dp(14),dp(14)));
-        TextView privateText=Ui.text(this,"ON DEVICE",10,Ui.LIME,true);privateText.setPadding(dp(6),0,0,0);privacy.addView(privateText);brand.addView(privacy);root.addView(brand);
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
+        root.addView(brand);
+        scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         page=Ui.column(this);page.setPadding(dp(24),dp(10),dp(24),dp(24));scroll.addView(page);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout nav=Ui.row(this);nav.setPadding(dp(16),dp(8),dp(16),dp(12));nav.setBackgroundColor(Ui.BG);
+        LinearLayout nav=Ui.row(this);navigation=nav;nav.setPadding(dp(16),dp(8),dp(16),dp(12));nav.setBackgroundColor(Ui.BG);
         String[] labels={"Today","History","Settings"};
         int[] symbols={R.drawable.ic_today,R.drawable.ic_history,R.drawable.ic_settings};
         for(int i=0;i<labels.length;i++) {
             final int index=i;LinearLayout surface=Ui.column(this);surface.setGravity(Gravity.CENTER);surface.setPadding(dp(8),dp(10),dp(8),dp(10));surface.setMinimumHeight(dp(64));
             ImageView symbol=new ImageView(this);symbol.setImageResource(symbols[i]);surface.addView(symbol,new LinearLayout.LayoutParams(dp(22),dp(22)));Ui.gap(surface,6);
-            TextView t=Ui.text(this,labels[i],11,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);surface.setFocusable(true);surface.setOnClickListener(v->showTab(index));
+            TextView t=Ui.text(this,labels[i],11,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);surface.setFocusable(true);surface.setOnClickListener(v->{showTab(index);scroll.smoothScrollTo(0,0);});
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(dp(3),0,dp(3),0);nav.addView(surface,cell);tabs.add(t);tabIcons.add(symbol);tabSurfaces.add(surface);
         }
         root.addView(nav);setContentView(root);root.requestApplyInsets();
         if(Build.VERSION.SDK_INT>=33)registerReceiver(timerState,new IntentFilter(OverlayService.STATE_CHANGED),Context.RECEIVER_NOT_EXPORTED);else registerReceiver(timerState,new IntentFilter(OverlayService.STATE_CHANGED));
-        tab=state==null?0:state.getInt("tab",0);showTab(tab);
+        tab=state==null?0:state.getInt("tab",0);
     }
     private int dp(float n){return Ui.dp(this,n);}
     @Override protected void onResume() {
-        super.onResume();visible=true;
+        super.onResume();
+        visible=true;
+        permissions=PermissionState.read(this);
+        if(usageSettingsPending){
+            showRecovery=!permissions.usage;
+            permissionFeedback=permissions.usage?null:"Usage access is still off. If the switch was blocked, follow the steps below.";
+            usageSettingsPending=false;
+        }
+        externalSettings=false;
+        if(!dismissedSetupThisVisit && !permissions.complete())setupVisible=true;
+        renderCurrent();
         if(refreshJob!=null)refreshJob.cancel(false);
         refreshJob=worker.scheduleWithFixedDelay(()->{
             UsageRepository.Snapshot s=repository.refresh();
-            main.post(()->{if(!visible||isDestroyed())return;boolean permissionChanged=snapshot==null||snapshot.permission!=s.permission;snapshot=s;if(permissionChanged)showTab(tab);if(tab==0)updateToday();});
+            main.post(()->{
+                if(!visible||isDestroyed())return;
+                snapshot=s;
+                PermissionState actual=PermissionState.read(this);
+                if(!actual.sameAs(permissions)){
+                    permissions=actual;
+                    permissionFeedback=null;
+                    if(!dismissedSetupThisVisit&&!actual.complete())setupVisible=true;
+                    renderCurrent();
+                }
+                if(!setupVisible&&tab==0)updateToday();
+            });
         },0,2,TimeUnit.SECONDS);
-        showTab(tab);
     }
-    @Override protected void onPause() {visible=false;if(refreshJob!=null)refreshJob.cancel(false);worker.execute(repository::flush);super.onPause();}
-    @Override protected void onDestroy() {visible=false;main.removeCallbacksAndMessages(null);unregisterReceiver(timerState);worker.shutdown();super.onDestroy();}
-    @Override public void onSaveInstanceState(Bundle out){out.putInt("tab",tab);super.onSaveInstanceState(out);}
-
+    @Override protected void onPause() {
+        visible=false;
+        if(refreshJob!=null)refreshJob.cancel(false);
+        worker.execute(repository::flush);
+        super.onPause();
+    }
+    @Override protected void onStop() {
+        if(!externalSettings&&!notificationRequestInFlight&&!isChangingConfigurations()){
+            dismissedSetupThisVisit=false;
+            notificationsSkipped=false;
+        }
+        super.onStop();
+    }
+    @Override protected void onDestroy() {
+        visible=false;main.removeCallbacksAndMessages(null);unregisterReceiver(timerState);worker.shutdown();super.onDestroy();
+    }
+    @Override public void onSaveInstanceState(Bundle out){
+        out.putInt("tab",tab);
+        out.putBoolean("setup",setupVisible);
+        out.putBoolean("dismissed",dismissedSetupThisVisit);
+        out.putBoolean("external",externalSettings);
+        out.putBoolean("usagePending",usageSettingsPending);
+        out.putBoolean("recovery",showRecovery);
+        out.putBoolean("notificationsSkipped",notificationsSkipped);
+        out.putBoolean("requestInFlight",notificationRequestInFlight);
+        out.putString("permissionFeedback",permissionFeedback);
+        super.onSaveInstanceState(out);
+    }
+    @Override public void onBackPressed(){
+        if(setupVisible){leaveSetup();return;}
+        if(tab!=0){showTab(0);return;}
+        super.onBackPressed();
+    }
+    private void clearPage(){
+        page.removeAllViews();rows.clear();
+        todayTotal=null;currentApp=null;status=null;toggle=null;empty=null;ring=null;appList=null;content=null;
+    }
+    private void renderCurrent(){if(setupVisible)renderSetup();else showTab(tab);}
+    private void openSetup(){
+        setupVisible=true;dismissedSetupThisVisit=false;permissionFeedback=null;permissions=PermissionState.read(this);
+        scroll.smoothScrollTo(0,0);renderSetup();
+    }
+    private void leaveSetup(){
+        setupVisible=false;dismissedSetupThisVisit=true;permissionFeedback=null;
+        showTab(tab);scroll.smoothScrollTo(0,0);
+    }
+    private void renderSetup(){
+        clearPage();navigation.setVisibility(View.GONE);
+        PermissionSetup.build(this,page,permissions,showRecovery,notificationsSkipped,permissionFeedback,new PermissionSetup.Actions(){
+            public void usage(){usageSettings();}
+            public void overlay(){overlaySettings();}
+            public void notifications(){notificationSettings();}
+            public void appInfo(){appInfoSettings();}
+            public void recovery(){showRecovery=true;permissionFeedback=null;renderSetup();}
+            public void skipNotifications(){notificationsSkipped=true;permissionFeedback=null;renderSetup();scroll.smoothScrollTo(0,0);}
+            public void dashboard(){leaveSetup();}
+            public void start(){leaveSetup();startTimer();}
+        });
+    }
     private void showTab(int index) {
-        tab=index;page.removeAllViews();rows.clear();
-        for(int i=0;i<tabs.size();i++){boolean selected=i==tab;tabs.get(i).setTextColor(selected?Ui.LIME:Ui.MUTED);tabIcons.get(i).setImageTintList(android.content.res.ColorStateList.valueOf(selected?Ui.LIME:Ui.MUTED));tabSurfaces.get(i).setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22ffffff),Ui.rounded(selected?0xff1d3025:Ui.BG,20,this),null));tabSurfaces.get(i).setSelected(selected);}
+        tab=index;setupVisible=false;navigation.setVisibility(View.VISIBLE);clearPage();
+        for(int i=0;i<tabs.size();i++){
+            boolean selected=i==tab;
+            tabs.get(i).setTextColor(selected?Ui.LIME:Ui.MUTED);
+            tabIcons.get(i).setImageTintList(android.content.res.ColorStateList.valueOf(selected?Ui.LIME:Ui.MUTED));
+            tabSurfaces.get(i).setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Ui.RIPPLE),Ui.rounded(selected?Ui.TINT:Ui.BG,20,this),null));
+            tabSurfaces.get(i).setSelected(selected);
+        }
         if(index==0)buildToday();else if(index==1)buildHistory();else buildSettings();
     }
     private void heading(String eyebrow,String title,String subtitle) {
@@ -84,11 +183,12 @@ public final class MainActivity extends Activity {
     }
     private void buildToday() {
         heading(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMM",Locale.ENGLISH)).toUpperCase(Locale.ENGLISH),"Your time, in focus.","See your day across all your apps.");
-        LinearLayout hero=Ui.card(this);hero.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR,new int[]{0xff20332b,0xff182128}));
+        LinearLayout hero=Ui.card(this);hero.setBackground(Ui.rounded(Ui.TINT,24,this));
         hero.addView(Ui.text(this,"TODAY'S SCREEN TIME",11,Ui.LIME,true));Ui.gap(hero,12);
         todayTotal=Ui.text(this,"—",48,Ui.INK,true);hero.addView(todayTotal);
         TextView precise=Ui.text(this,"Active app time · resets at local midnight",12,Ui.MUTED,false);hero.addView(precise);Ui.gap(hero,18);
-        ring=new Ring(this);hero.addView(ring,new LinearLayout.LayoutParams(-1,dp(138)));
+        ring=new Ring(this);hero.addView(ring,new LinearLayout.LayoutParams(-1,dp(116)));
+        hero.addView(Ui.text(this,"Daily reference: "+Ui.duration(Ui.prefs(this).getInt("goal",180)*60000L),14,Ui.MUTED,false));
         currentApp=Ui.text(this,"Waiting for Android usage data",13,Ui.INK,false);currentApp.setPadding(0,dp(12),0,0);hero.addView(currentApp);page.addView(hero);Ui.gap(page,16);
         buildAccessCard(page);Ui.gap(page,24);
         LinearLayout title=Ui.row(this);title.addView(Ui.text(this,"Where your time went",20,Ui.INK,true),new LinearLayout.LayoutParams(0,-2,1));title.addView(Ui.text(this,"TODAY",10,Ui.MUTED,true));page.addView(title);Ui.gap(page,14);
@@ -97,13 +197,28 @@ public final class MainActivity extends Activity {
         if(snapshot!=null)updateToday();
     }
     private void buildAccessCard(LinearLayout parent) {
-        boolean usage=repository.hasUsageAccess(),overlay=Settings.canDrawOverlays(this);
+        PermissionState state=PermissionState.read(this);
         LinearLayout card=Ui.card(this);
-        status=Ui.text(this,usage&&overlay?"Your floating timer": "Set up your timer",18,Ui.INK,true);card.addView(status);Ui.gap(card,8);
-        TextView detail=Ui.text(this,usage&&overlay?"See today's total and the current app's time on top of other apps.":"Two Android permissions make the timer work. Screen content is never read or recorded.",13,Ui.MUTED,false);detail.setLineSpacing(dp(3),1);card.addView(detail);Ui.gap(card,16);
-        if(!usage){card.addView(Ui.button(this,"1  ·  Allow Usage Access",true,this::usageSettings));Ui.gap(card,10);}
-        if(!overlay){card.addView(Ui.button(this,"2  ·  Allow display over apps",usage,this::overlaySettings));Ui.gap(card,10);}
-        if(usage&&overlay){toggle=Ui.button(this,OverlayService.running?"Stop floating timer":"Start floating timer",!OverlayService.running,()->{if(OverlayService.running){toggle.setText("Stopping timer…");stopService(new Intent(this,OverlayService.class));Ui.prefs(this).edit().putBoolean("enabled",false).apply();}else startTimer();});card.addView(toggle);}
+        card.addView(Ui.text(this,state.canTrack()?"Your floating timer":"Finish setting up",18,Ui.INK,true));
+        Ui.gap(card,8);
+        card.addView(Ui.text(this,state.canTrack()?"Today’s total and the current app’s time, visible across your apps.":"Allow Usage access for your app breakdown and Display over apps for the floating timer.",15,Ui.MUTED,false));
+        Ui.gap(card,16);
+        if(!state.canTrack()){
+            card.addView(Ui.button(this,"Continue permission setup",true,this::openSetup));
+        }else{
+            toggle=Ui.button(this,OverlayService.running?"Stop floating timer":"Start floating timer",!OverlayService.running,()->{
+                if(OverlayService.running){
+                    toggle.setText("Stopping timer…");stopService(new Intent(this,OverlayService.class));
+                    Ui.prefs(this).edit().putBoolean("enabled",false).apply();
+                }else startTimer();
+            });
+            card.addView(toggle);
+            if(!state.notifications){
+                Ui.gap(card,12);
+                card.addView(Ui.text(this,"Timer notifications are off. You can stop the timer here.",14,Ui.MUTED,false));
+                Ui.gap(card,10);card.addView(Ui.button(this,"Review permissions",false,this::openSetup));
+            }
+        }
         parent.addView(card);
     }
     private void updateToday() {
@@ -168,31 +283,92 @@ public final class MainActivity extends Activity {
         Switch solid=new Switch(this);solid.setText("Solid timer background");solid.setTextColor(Ui.INK);solid.setChecked(Ui.prefs(this).getBoolean("solid",false));solid.setOnCheckedChangeListener((b,checked)->Ui.prefs(this).edit().putBoolean("solid",checked).apply());appearance.addView(solid);Ui.gap(appearance,14);
         appearance.addView(Ui.text(this,"Drag the floating pill to move it. Tap to switch app detail on or off. Stop it from Today or the notification. It hides while the phone is locked.",13,Ui.MUTED,false));Ui.gap(appearance,14);
         appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));page.addView(appearance);Ui.gap(page,16);
-        LinearLayout access=Ui.card(this);access.addView(Ui.text(this,"Permissions & battery",18,Ui.INK,true));Ui.gap(access,14);access.addView(Ui.button(this,"Usage Access",false,this::usageSettings));Ui.gap(access,10);access.addView(Ui.button(this,"Display over other apps",false,this::overlaySettings));Ui.gap(access,10);
-        if(Build.VERSION.SDK_INT>=33){access.addView(Ui.button(this,"Allow timer notifications",false,()->requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},30)));Ui.gap(access,10);}
-        access.addView(Ui.button(this,"Open app & battery settings",false,()->openSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())))));
+        PermissionState state=PermissionState.read(this);
+        LinearLayout access=Ui.card(this);
+        access.addView(Ui.text(this,"Permissions & battery",18,Ui.INK,true));Ui.gap(access,14);
+        access.addView(Ui.text(this,"Usage access: "+(state.usage?"Allowed":"Not allowed")+"\nDisplay over apps: "+(state.overlay?"Allowed":"Not allowed")+"\nNotifications: "+(state.notifications?"Allowed":"Off · optional"),15,Ui.MUTED,false));
+        Ui.gap(access,16);access.addView(Ui.button(this,"Review permission setup",true,this::openSetup));Ui.gap(access,10);
+        access.addView(Ui.button(this,"Usage access settings",false,this::usageSettings));Ui.gap(access,10);
+        access.addView(Ui.button(this,"Display over apps settings",false,this::overlaySettings));Ui.gap(access,10);
+        access.addView(Ui.button(this,"Notification settings",false,this::notificationSettings));Ui.gap(access,10);
+        access.addView(Ui.button(this,"Open app & battery settings",false,this::appInfoSettings));
         Ui.gap(access,14);access.addView(Ui.text(this,"If Samsung pauses the timer, set TimeLens battery use to Unrestricted and remove it from Sleeping apps. After a restart, open TimeLens and start the timer again.",13,Ui.MUTED,false));page.addView(access);Ui.gap(page,16);
-        LinearLayout about=Ui.card(this);about.addView(Ui.text(this,"Designed around your privacy",18,Ui.INK,true));Ui.gap(about,10);about.addView(Ui.text(this,"TimeLens reads app names and activity timestamps through Android Usage Access. It cannot read chats, capture the screen, count reels or track audio playing with the screen off. There is no Internet permission. Some apps, including banking and permission screens, can hide overlays. Split screen uses the latest resumed app as an approximation.",13,Ui.MUTED,false));Ui.gap(about,14);about.addView(Ui.text(this,"TimeLens 0.1.0 · Personal test build",11,Ui.LIME,true));page.addView(about);
+        LinearLayout about=Ui.card(this);about.addView(Ui.text(this,"Designed around your privacy",18,Ui.INK,true));Ui.gap(about,10);about.addView(Ui.text(this,"TimeLens reads app names and activity timestamps through Android Usage Access. It cannot read chats, capture the screen, count reels or track audio playing with the screen off. There is no Internet permission. Some apps, including banking and permission screens, can hide overlays. Split screen uses the latest resumed app as an approximation.",13,Ui.MUTED,false));Ui.gap(about,14);about.addView(Ui.text(this,"TimeLens "+versionName()+" · Personal test build",11,Ui.LIME,true));page.addView(about);
     }
-    private void usageSettings(){openSettings(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS,Uri.parse("package:"+getPackageName())));}
-    private void overlaySettings(){openSettings(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}
-    private void openSettings(Intent intent){try{startActivity(intent);}catch(ActivityNotFoundException e){startActivity(new Intent(Settings.ACTION_SETTINGS));}}
+    private String versionName(){
+        try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
+        catch(PackageManager.NameNotFoundException e){return "";}
+    }
+    private void usageSettings(){
+        usageSettingsPending=true;permissionFeedback=null;
+        openSettings(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+    }
+    private void overlaySettings(){
+        permissionFeedback=null;
+        openSettings(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+    }
+    private void appInfoSettings(){
+        openSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+    }
+    private void notificationSettings(){
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED
+                && (!Ui.prefs(this).getBoolean("notifications_requested",false) || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))){
+            notificationRequestInFlight=true;
+            Ui.prefs(this).edit().putBoolean("notifications_requested",true).apply();
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},30);
+        }else{
+            openSettings(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()),new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));
+        }
+    }
+    @Override public void onRequestPermissionsResult(int code,String[] names,int[] results){
+        super.onRequestPermissionsResult(code,names,results);
+        if(code!=30)return;
+        notificationRequestInFlight=false;
+        permissions=PermissionState.read(this);
+        permissionFeedback=permissions.notifications?null:"Notifications are still off. Try again to review Android’s settings, or continue without them.";
+        renderCurrent();
+    }
+    private void openSettings(Intent intent,Intent fallback){
+        externalSettings=true;
+        try{startActivity(intent);}
+        catch(ActivityNotFoundException|SecurityException e){
+            try{startActivity(fallback);}
+            catch(ActivityNotFoundException|SecurityException unavailable){
+                externalSettings=false;usageSettingsPending=false;
+                permissionFeedback="This settings screen is unavailable. Open Android Settings → Apps → TimeLens to review access.";
+                setupVisible=true;permissions=PermissionState.read(this);renderSetup();
+            }
+        }
+    }
     private void startTimer(){
-        if(!repository.hasUsageAccess()){usageSettings();return;}if(!Settings.canDrawOverlays(this)){overlaySettings();return;}
-        if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},30);
-        try{if(toggle!=null)toggle.setText("Starting timer…");startForegroundService(new Intent(this,OverlayService.class));}catch(RuntimeException e){Toast.makeText(this,"Could not start the timer. Check both permissions and try again.",Toast.LENGTH_LONG).show();showTab(tab);}
+        permissions=PermissionState.read(this);
+        if(!permissions.canTrack()){openSetup();return;}
+        try{
+            if(toggle!=null)toggle.setText("Starting timer…");
+            startForegroundService(new Intent(this,OverlayService.class));
+        }catch(RuntimeException e){
+            permissionFeedback="The timer could not start. Review permissions and battery settings, then try again.";
+            setupVisible=true;renderSetup();
+        }
     }
-    private static final class Ring extends View {
+    private static final class Ring extends FrameLayout {
+        final TextView percent;
         long total,goal=180*60000L;
         float visibleFraction;
         final SpringValue trace;
         final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-        Ring(Context c){super(c);setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);trace=new SpringValue(0,0.001,v->{visibleFraction=v;invalidate();},null);}
-        void setUsage(long total,long goal){this.total=total;this.goal=goal;trace.target(Math.min(1,total/(float)Math.max(1,goal)));invalidate();}
+        Ring(Context c){
+            super(c);setWillNotDraw(false);setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            percent=Ui.text(c,"0%",24,Ui.INK,true);percent.setGravity(Gravity.CENTER);
+            percent.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            addView(percent,new FrameLayout.LayoutParams(-1,-1));
+            trace=new SpringValue(0,0.001,v->{visibleFraction=v;invalidate();},null);
+        }
+        void setUsage(long total,long goal){this.total=total;this.goal=goal;percent.setText(Math.round(total*100.0/Math.max(1,goal))+"%");setContentDescription(percent.getText()+" of your "+Ui.duration(goal)+" daily reference");trace.target(Math.min(1,total/(float)Math.max(1,goal)));invalidate();}
         @Override protected void onDetachedFromWindow(){trace.stop();super.onDetachedFromWindow();}
-        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float density=getResources().getDisplayMetrics().density;float size=Math.min(getHeight()-12*density,126*density),left=(getWidth()-size)/2,top=6*density;RectF bounds=new RectF(left,top,left+size,top+size);
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(9*density);paint.setStrokeCap(Paint.Cap.ROUND);paint.setColor(0xff34463e);canvas.drawArc(bounds,-90,360,false,paint);paint.setColor(Ui.LIME);canvas.drawArc(bounds,-90,Math.max(0,Math.min(360,360f*visibleFraction)),false,paint);
-            paint.setStyle(Paint.Style.FILL);paint.setTextAlign(Paint.Align.CENTER);paint.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));paint.setTextSize(26*density);paint.setColor(Ui.INK);String percent=Math.round(total*100.0/Math.max(1,goal))+"%";canvas.drawText(percent,getWidth()/2f,top+size/2+5*density,paint);paint.setTextSize(10*density);paint.setColor(Ui.MUTED);canvas.drawText("of "+Ui.duration(goal)+" reference",getWidth()/2f,top+size/2+24*density,paint);setContentDescription(percent+" of your "+Ui.duration(goal)+" daily reference");
+        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float density=getResources().getDisplayMetrics().density;float size=Math.min(getHeight()-12*density,104*density),left=(getWidth()-size)/2,top=6*density;RectF bounds=new RectF(left,top,left+size,top+size);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(9*density);paint.setStrokeCap(Paint.Cap.ROUND);paint.setColor(Ui.LINE);canvas.drawArc(bounds,-90,360,false,paint);paint.setColor(Ui.LIME);canvas.drawArc(bounds,-90,Math.max(0,Math.min(360,360f*visibleFraction)),false,paint);
+
         }
     }
 }

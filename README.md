@@ -6,20 +6,26 @@ A native Android screen-time dashboard and a draggable timer that stays above ot
 
 ## Download the APK from GitHub
 
-Open [Build Android APK](https://github.com/mohitchoyal2002/Anti-braintot/actions/workflows/android-apk.yml), select the latest successful run and download **TimeLens-0.1.0-debug.apk** from **Artifacts** or the run summary's download link. Sign in to GitHub to download artifacts. The artifact is the APK itself, so no ZIP extraction is needed.
+Open [Build Android APK](https://github.com/mohitchoyal2002/Anti-braintot/actions/workflows/android-apk.yml), select the latest successful run and download **TimeLens-0.2.0-debug.apk** from **Artifacts** or the run summary's download link. Sign in to GitHub to download artifacts. The artifact is the APK itself, so no ZIP extraction is needed.
 
-The workflow runs on pushes to `main`, pull requests, or **Run workflow** manually. It installs JDK 17 and the Android 35 SDK, runs the counting checks, compiles/signs the APK with the verified SDK-only script, verifies its signature, and retains the download for 30 days. No repository secrets are required for this personal debug build. Each clean run generates its own development signing key; you may need to uninstall a previous debug build before installing a later run, which also removes local history. A fixed private signing secret can be configured later for persistent installs; no production signing key is checked in.
+The workflow runs on pushes to `main`, pull requests, or **Run workflow** manually. It installs JDK 17 and the Android 35 SDK, runs the counting checks, compiles/signs the APK with the SDK-only script, verifies its signature, and runs permission-flow instrumentation on an Android 15 emulator before publishing the APK. Downloads are retained for 30 days; test screenshots and logs are retained for 14 days. No repository secrets are required for this personal debug build. Each clean run generates its own development signing key; you may need to uninstall a previous debug build before installing a later run, which also removes local history. A fixed private signing secret can be configured later for persistent installs; no production signing key is checked in.
 
 ## Install the personal test build
 
-1. Install `TimeLens-0.1.0-debug.apk` on your Android phone (Android 10 or newer).
-2. Open TimeLens and tap **Allow Usage Access**. Enable TimeLens in Android settings, then return.
-3. Tap **Allow display over apps**, enable TimeLens, then return.
-4. Tap **Start floating timer**. Allow notifications if you want the notification's Stop button and reboot reminder.
+1. Install `TimeLens-0.2.0-debug.apk` on your Android phone (Android 10 or newer).
+2. Open TimeLens. A guided setup appears whenever a permission is missing. Tap **Open usage access**, select TimeLens if needed, enable access, then return.
+3. If Android blocks the switch, follow **Usage switch disabled?** in setup: **Open App info → ⋮ → Allow restricted settings**, confirm in Android, return and open Usage access again. This is an Android security confirmation; TimeLens cannot grant or bypass it.
+4. Follow **Allow floating timer** to enable Display over apps. Choose whether to allow timer notifications (optional), then tap **Start floating timer**. **Not now** opens the dashboard; missing permissions remain visible and setup returns on the next visit.
 5. Open another app. The pill shows `TODAY  02:14:36` and, for example, `YouTube · 00:18:20`. These are example values, not measured usage.
 6. Drag the pill to move it. Tap it to toggle the current-app line. Stop from Today or the persistent notification.
 
 If Samsung pauses the service, set TimeLens → App info → Battery → **Unrestricted** and remove it from Sleeping apps. After a phone restart, open TimeLens and start the timer again; the app sends a reminder when notifications are allowed.
+
+## Usage access blocked on a Samsung phone
+
+The message **“Controlled by restricted setting” / “App was denied access”** can appear after installing an APK outside an app store. Open **Settings → Apps → TimeLens → ⋮ → Allow restricted settings**, follow the phone’s confirmation, and then enable **Usage data access** for TimeLens. Only do this for an app you trust. The exact menu varies by Android version and manufacturer; a managed phone may have administrator restrictions.
+
+The new setup includes an App info shortcut and these instructions. Returning from a denied Usage access attempt reveals recovery help. Every return from Settings rechecks the actual grants; visiting a settings page never marks access as allowed. The app cannot reliably detect why Android refused a grant, so the restriction instructions are conditional. See [Google’s restricted-settings help](https://support.google.com/android/answer/12623953?hl=en) and [Android special-permission guidance](https://developer.android.com/training/permissions/requesting-special).
 
 ## What is included
 
@@ -27,6 +33,8 @@ If Samsung pauses the service, set TimeLens → App info → Battery → **Unres
 - A live floating timer: today's total + current app's accumulated time today.
 - Seven-day view of locally saved history, with daily app breakdowns.
 - A configurable daily reference ring, total-only overlay mode, remembered drag position, and Stop control.
+- Permission onboarding with live grant status, restricted-settings recovery, optional notifications, notification-channel checks and per-visit dismissal.
+- System light/dark appearance and scalable native text.
 - An Apple-design-informed native interface: consistent vector icons, immediate press feedback, interruptible spring docking, a solid-overlay option and Android reduced-motion support. See [DESIGN.md](DESIGN.md).
 - Screen-off/lock handling, local-midnight boundaries, overlapping activity transitions and event deduplication.
 - Native Java UI, Android UsageStatsManager, a user-started foreground service, WindowManager and SQLite. No third-party runtime libraries.
@@ -52,7 +60,7 @@ bash scripts/test-counting.sh
 bash scripts/build-apk.sh
 ```
 
-The signed personal APK is written to `build/sdk/TimeLens-0.1.0-debug.apk`. This is the build path verified in this workspace. It uses the official SDK compiler/dex/resource/signing tools and avoids downloading Gradle dependencies. The generated `debug-signing/timelens-debug.keystore` is for personal development, uses the conventional `android` password, and must not be used for a store release. Keep your own copy if you want subsequent SDK-only builds to update an installed APK without uninstalling it.
+The signed personal APK is written to `build/sdk/TimeLens-0.2.0-debug.apk`. This is the build path verified in this workspace. It uses the official SDK compiler/dex/resource/signing tools and avoids downloading Gradle dependencies. The generated `debug-signing/timelens-debug.keystore` is for personal development, uses the conventional `android` password, and must not be used for a store release. Keep your own copy if you want subsequent SDK-only builds to update an installed APK without uninstalling it.
 
 The project can also be opened in Android Studio. A standard Gradle wrapper is included; on a normal development machine use `./gradlew :app:assembleDebug`. Android Gradle Plugin is pinned to 8.7.3 and Gradle to 8.9. The Gradle dependency-resolution path was blocked by this host's Java networking; it has not been reported as a passing build. Do not put this workspace's proxy settings into your machine's project.
 
@@ -61,7 +69,10 @@ The project can also be opened in Android Studio. A standard Gradle wrapper is i
 - 23 executable domain assertions: app switches, old-activity pauses, screen/lock intervals, carried sessions across midnight, duplicate events, stop/shutdown/startup boundaries, daylight-saving days, exclusive query ends and bounded total duration.
 - All app sources compiled against the public Android 35 API; resources linked, Java bytecode converted to DEX and APK signature verified.
 - Binary manifest inspected for package/version, minimum/target SDK, launcher activity and permissions. No Internet or accessibility permission is declared.
-- This is a first personal test build. No attached Android device or emulator was available, so launch, Samsung behavior, battery consumption, overlay interaction and end-to-end timing have not yet been measured on a phone.
+- The workflow runs six native Android 15 instrumentation scenarios: denied Usage access and Settings return/recovery; usage-granted/overlay-missing; optional notifications with foreground timer start/stop; all grants followed by revocation; disabled notification channel; dark setup at 200% font scale. Logs and screenshots are available in **permission-test-evidence**. Check the run’s result rather than assuming a pending run passed.
+- Samsung’s restricted-settings confirmation requires testing and approval on the actual phone; the emulator does not reproduce that manufacturer/security state. Battery consumption and numerical parity with Digital Wellbeing have not been measured.
+
+To run permission tests locally, start a disposable Android 15 emulator, build the app, then run `bash scripts/test-permissions-device.sh`. This deliberately clears TimeLens test data and modifies grants on the emulator; the script refuses a physical phone. Version name/code are defined once in `version.properties` for both Gradle and SDK builds.
 
 ## Main files
 
@@ -71,7 +82,9 @@ The project can also be opened in Android Studio. A standard Gradle wrapper is i
 | `UsageRepository.java` | Usage Access, bounded overlap queries, deduplication, snapshots and day boundaries |
 | `UsageStore.java` | Atomic SQLite day/app archives and rolling event cache |
 | `OverlayService.java` | Foreground notification, two-second polling, one-second visual updates, drag and lock visibility |
-| `MainActivity.java` | Today, History, Settings and permission setup |
+| `MainActivity.java` | Today, History, Settings, setup lifecycle and Android permission requests |
+| `PermissionState.java` / `PermissionSetup.java` | Actual grant reading, sequential setup, recovery and optional permissions |
+| `PermissionFlowInstrumentation.java` | Native device-level permission and lifecycle regressions |
 | `BootReceiver.java` | User-tap reboot reminder; no background service launch |
 | `tests/UsageTimelineTest.java` | Executable counting regressions |
 

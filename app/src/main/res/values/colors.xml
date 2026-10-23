@@ -1,0 +1,10 @@
+<resources>
+    <color name="surface">#F5F7F4</color>
+    <color name="card">#FFFFFF</color>
+    <color name="ink">#14221A</color>
+    <color name="muted">#55655B</color>
+    <color name="accent">#2D6634</color>
+    <color name="line">#DCE4DE</color>
+    <color name="tint">#E9F1E7</color>
+    <bool name="light_system_bars">true</bool>
+</resources>

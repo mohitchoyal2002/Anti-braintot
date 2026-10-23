@@ -17,7 +17,7 @@ jobs:
   apk:
     name: Test and build installable APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@v7.0.1
@@ -44,11 +44,36 @@ jobs:
       - name: Compile, package and verify APK
         run: bash scripts/build-apk.sh
 
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify permission setup on Android 15
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 300
+          script: bash scripts/test-permissions-device.sh
+
+      - name: Upload permission test evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: permission-test-evidence
+          path: build/permission-evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload downloadable APK
         id: apk
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: build/sdk/TimeLens-0.1.0-debug.apk
+          path: build/sdk/TimeLens-*-debug.apk
           # A direct .apk download is easier to install on an Android phone.
           archive: false
           if-no-files-found: error
@@ -58,4 +83,4 @@ jobs:
         env:
           APK_URL: ${{ steps.apk.outputs.artifact-url }}
         run: |
-          printf '### TimeLens APK\n\n[Download the APK](%s)\n\nInstall, grant Usage Access and Display over other apps, then tap Start floating timer.\n\nThis is a personal debug build; device testing is still required.\n' "$APK_URL" >> "$GITHUB_STEP_SUMMARY"
+          printf '### TimeLens APK\n\n[Download the APK](%s)\n\nOpen TimeLens and follow permission setup. If Usage access is blocked: App info → ⋮ → Allow restricted settings, confirm, then return to Usage access. Notifications are optional.\n\nCounting checks and Android 15 permission-flow tests passed. Samsung-specific restricted settings still require confirmation on the phone.\n' "$APK_URL" >> "$GITHUB_STEP_SUMMARY"

@@ -38,7 +38,7 @@ public final class OverlayService extends Service {
         @Override public void run() { render(); main.postDelayed(this,1000); }
     };
     @Override public void onCreate() {
-        super.onCreate(); repository=UsageRepository.get(this); windows=getSystemService(WindowManager.class); power=getSystemService(PowerManager.class); keyguard=getSystemService(KeyguardManager.class);
+        super.onCreate(); Ui.configure(this); repository=UsageRepository.get(this); windows=getSystemService(WindowManager.class); power=getSystemService(PowerManager.class); keyguard=getSystemService(KeyguardManager.class);
         worker=Executors.newSingleThreadScheduledExecutor();
         NotificationManager nm=getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel("timer","Live screen-time timer",NotificationManager.IMPORTANCE_LOW));
@@ -76,7 +76,7 @@ public final class OverlayService extends Service {
     }
     private void createPill() {
         pill=Ui.column(this); pill.setPadding(Ui.dp(this,14),Ui.dp(this,10),Ui.dp(this,14),Ui.dp(this,10));
-        pillBackground=Ui.rounded(0xef182125,21,this);pillBackground.setStroke(Ui.dp(this,1),0xff4a5b50);pill.setBackground(pillBackground);pill.setElevation(Ui.dp(this,8));
+        pillBackground=Ui.rounded(Ui.CARD,21,this);pillBackground.setStroke(Ui.dp(this,1),Ui.LINE);pill.setBackground(pillBackground);pill.setElevation(Ui.dp(this,8));
         totalText=Ui.text(this,"TODAY  00:00:00",14,Ui.LIME,true); appText=Ui.text(this,"Starting timer…",12,Ui.INK,false); appText.setMaxLines(1); appText.setEllipsize(android.text.TextUtils.TruncateAt.END);
         pill.addView(totalText); Ui.gap(pill,3); pill.addView(appText); pill.setContentDescription("TimeLens live screen-time timer. Drag to move. Tap to toggle app detail.");
         layout=new WindowManager.LayoutParams(overlayWidth(),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
@@ -138,7 +138,7 @@ public final class OverlayService extends Service {
     private void render() {
         if(!running || pill==null) return;
         boolean solid=Ui.prefs(this).getBoolean("solid",false);
-        if(solidBackground==null||solidBackground!=solid){solidBackground=solid;pillBackground.setColor(solid?0xff182125:0xef182125);}
+        if(solidBackground==null||solidBackground!=solid){solidBackground=solid;pillBackground.setColor((Ui.CARD & 0x00ffffff) | (solid?0xff000000:0xef000000));}
         if(!power.isInteractive() || keyguard.isKeyguardLocked() || !Settings.canDrawOverlays(this)) {hide();return;}
         if(!pill.isAttachedToWindow()) { try {clamp();windows.addView(pill,layout);}catch(RuntimeException e){stopSelf();return;} }
         UsageRepository.Snapshot s=snapshot; if(s==null)return;
@@ -152,7 +152,14 @@ public final class OverlayService extends Service {
         if(minute!=notificationMinute) {notificationMinute=minute;getSystemService(NotificationManager.class).notify(1,notification(s.usage.total+extra));}
     }
     private void hide() {if(settleX!=null)settleX.stop();if(settleY!=null)settleY.stop();if(pill!=null && pill.isAttachedToWindow()) try{windows.removeView(pill);}catch(IllegalArgumentException ignored){} }
-    @Override public void onConfigurationChanged(android.content.res.Configuration c) {super.onConfigurationChanged(c);if(pill!=null&&pill.isAttachedToWindow()){settleX.stop();settleY.stop();layout.width=overlayWidth();clamp();moveWindow();}}
+    @Override public void onConfigurationChanged(android.content.res.Configuration c) {
+        super.onConfigurationChanged(c);Ui.configure(this);solidBackground=null;
+        if(pill!=null){
+            totalText.setTextColor(Ui.LIME);appText.setTextColor(Ui.INK);pillBackground.setStroke(Ui.dp(this,1),Ui.LINE);
+            if(pill.isAttachedToWindow()){settleX.stop();settleY.stop();layout.width=overlayWidth();clamp();moveWindow();}
+            render();
+        }
+    }
     @Override public void onDestroy() {
         shuttingDown=true; running=false; main.removeCallbacksAndMessages(null); hide();
         sendBroadcast(new Intent(STATE_CHANGED).setPackage(getPackageName()));

@@ -42,7 +42,9 @@ final class UsageRepository {
     }
     boolean hasUsageAccess() {
         AppOpsManager ops=context.getSystemService(AppOpsManager.class);
-        return ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),context.getPackageName())==AppOpsManager.MODE_ALLOWED;
+        try {
+            return ops!=null && ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),context.getPackageName())==AppOpsManager.MODE_ALLOWED;
+        } catch(RuntimeException unavailable) { return false; }
     }
     private long midnight(LocalDate day) { return day.atStartOfDay(zone).toInstant().toEpochMilli(); }
     synchronized Snapshot refresh() {

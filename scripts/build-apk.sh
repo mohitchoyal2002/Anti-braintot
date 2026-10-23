@@ -7,12 +7,17 @@ if [[ -z "$sdk_path" ]]; then printf '%s\n' 'Set ANDROID_SDK_ROOT to your Androi
 build_tools="$sdk_path/build-tools/35.0.0"
 android_jar="$sdk_path/platforms/android-35/android.jar"
 out="$PWD/build/sdk"
+# Only generated build output is cleared, so removed classes cannot survive a rebuild.
+rm -rf "$out"
 mkdir -p "$out/generated" "$out/classes" "$out/dex" "$PWD/debug-signing"
+version_name="$(sed -n 's/^versionName=//p' version.properties)"
+[[ "$version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf '%s\n' 'Invalid versionName' >&2; exit 1; }
 python3 - "$out" <<'PY'
 import pathlib, sys, xml.etree.ElementTree as E
 E.register_namespace('android','http://schemas.android.com/apk/res/android'); E.register_namespace('tools','http://schemas.android.com/tools')
 t=E.parse('app/src/main/AndroidManifest.xml'); r=t.getroot(); r.set('package','work.timelens.app')
-r.set('{http://schemas.android.com/apk/res/android}versionCode','1'); r.set('{http://schemas.android.com/apk/res/android}versionName','0.1.0')
+version=dict(line.strip().split('=',1) for line in pathlib.Path('version.properties').read_text().splitlines() if '=' in line)
+r.set('{http://schemas.android.com/apk/res/android}versionCode',version['versionCode']); r.set('{http://schemas.android.com/apk/res/android}versionName',version['versionName'])
 r.find('application').set('{http://schemas.android.com/apk/res/android}debuggable','true')
 t.write(pathlib.Path(sys.argv[1])/'AndroidManifest.xml',encoding='utf-8',xml_declaration=True)
 PY
@@ -37,6 +42,6 @@ key_path="$PWD/debug-signing/timelens-debug.keystore"
 if [[ ! -f "$key_path" ]]; then
   keytool -genkeypair -noprompt -keystore "$key_path" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=TimeLens Debug, O=Personal Testing, C=IN'
 fi
-"$build_tools/apksigner" sign --ks "$key_path" --ks-pass pass:android --key-pass pass:android --out "$out/TimeLens-0.1.0-debug.apk" "$out/aligned.apk"
-"$build_tools/apksigner" verify --verbose "$out/TimeLens-0.1.0-debug.apk"
-printf 'APK: %s\n' "$out/TimeLens-0.1.0-debug.apk"
+"$build_tools/apksigner" sign --ks "$key_path" --ks-pass pass:android --key-pass pass:android --out "$out/TimeLens-$version_name-debug.apk" "$out/aligned.apk"
+"$build_tools/apksigner" verify --verbose "$out/TimeLens-$version_name-debug.apk"
+printf 'APK: %s\n' "$out/TimeLens-$version_name-debug.apk"

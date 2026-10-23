@@ -18,8 +18,7 @@ public final class OverlayService extends Service {
     private final Handler main=new Handler(Looper.getMainLooper());
     private ScheduledExecutorService worker;
     private WindowManager windows;
-    private LinearLayout pill;
-    private TextView totalText,appText;
+    private TimerCapsule pill;
     private WindowManager.LayoutParams layout;
     private UsageRepository repository;
     private volatile UsageRepository.Snapshot snapshot;
@@ -29,8 +28,6 @@ public final class OverlayService extends Service {
     private long notificationMinute=-1;
     private boolean shuttingDown;
     private SpringValue settleX,settleY;
-    private android.graphics.drawable.GradientDrawable pillBackground;
-    private Boolean solidBackground;
     private final BroadcastReceiver displayReceiver=new BroadcastReceiver() {
         @Override public void onReceive(Context c,Intent i) { if(!power.isInteractive() || keyguard.isKeyguardLocked()) hide(); else requestRefresh(); }
     };
@@ -75,10 +72,8 @@ public final class OverlayService extends Service {
         snapshot=repository.refresh(); main.post(this::render);
     }
     private void createPill() {
-        pill=Ui.column(this); pill.setPadding(Ui.dp(this,14),Ui.dp(this,10),Ui.dp(this,14),Ui.dp(this,10));
-        pillBackground=Ui.rounded(Ui.CARD,21,this);pillBackground.setStroke(Ui.dp(this,1),Ui.LINE);pill.setBackground(pillBackground);pill.setElevation(Ui.dp(this,8));
-        totalText=Ui.text(this,"TODAY  00:00:00",14,Ui.LIME,true); appText=Ui.text(this,"Starting timer…",12,Ui.INK,false); appText.setMaxLines(1); appText.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        pill.addView(totalText); Ui.gap(pill,3); pill.addView(appText); pill.setContentDescription("TimeLens live screen-time timer. Drag to move. Tap to toggle app detail.");
+        pill=new TimerCapsule(this);
+        pill.setExpanded(!Ui.prefs(this).getBoolean("compact",true));
         layout=new WindowManager.LayoutParams(overlayWidth(),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         layout.gravity=Gravity.TOP|Gravity.START; layout.x=Ui.prefs(this).getInt("overlay_x",Ui.dp(this,16)); layout.y=Ui.prefs(this).getInt("overlay_y",Ui.dp(this,100));
         settleX=new SpringValue(layout.x,0.4,v->{layout.x=Math.round(v);moveWindow();},this::savePosition);
@@ -91,26 +86,27 @@ public final class OverlayService extends Service {
                 switch(e.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         settleX.stop();settleY.stop();if(velocity!=null)velocity.recycle();velocity=VelocityTracker.obtain();velocity.addMovement(e);
-                        startX=e.getRawX(); startY=e.getRawY(); initialX=layout.x; initialY=layout.y; moved=false;pill.setAlpha(0.9f);return true;
+                        startX=e.getRawX(); startY=e.getRawY(); initialX=layout.x; initialY=layout.y; moved=false;pill.setPressed(true);return true;
                     case MotionEvent.ACTION_MOVE:
                         float dx=e.getRawX()-startX,dy=e.getRawY()-startY;
                         if(Math.abs(dx)+Math.abs(dy)>Ui.dp(OverlayService.this,8)) moved=true;
                         if(moved){layout.x=Math.round(softBound(initialX+dx,Ui.dp(OverlayService.this,8),maxX()));layout.y=Math.round(softBound(initialY+dy,Ui.dp(OverlayService.this,28),maxY()));moveWindow();}
                         return true;
                     case MotionEvent.ACTION_UP:
-                        pill.setAlpha(1);
+                        pill.setPressed(false);
                         if(moved){velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();float projected=layout.x+vx*0.099f;float targetX=projected>(Ui.dp(OverlayService.this,8)+maxX())/2f?maxX():Ui.dp(OverlayService.this,8);float targetY=Math.max(Ui.dp(OverlayService.this,28),Math.min(maxY(),layout.y+vy*0.06f));settleX.release(layout.x,targetX,vx);settleY.release(layout.y,targetY,vy);v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);}else v.performClick();
                         velocity.recycle();velocity=null;return true;
                     case MotionEvent.ACTION_CANCEL:
-                        pill.setAlpha(1);clamp();moveWindow();savePosition();if(velocity!=null){velocity.recycle();velocity=null;}return true;
+                        pill.setPressed(false);clamp();moveWindow();savePosition();if(velocity!=null){velocity.recycle();velocity=null;}return true;
                     default:return false;
                 }
             }
         });
         pill.setOnClickListener(v->{
-            boolean compact=Ui.prefs(this).getBoolean("compact",false);
-            Ui.prefs(this).edit().putBoolean("compact",!compact).apply();render();
+            Ui.prefs(this).edit().putBoolean("compact",pill.isExpanded()).apply();
+            v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);render();
         });
+
     }
     private android.graphics.Rect screenBounds() {
         android.graphics.Rect bounds;
@@ -118,9 +114,9 @@ public final class OverlayService extends Service {
         else { android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);bounds=new android.graphics.Rect(0,0,m.widthPixels,m.heightPixels); }
         return bounds;
     }
-    private int overlayWidth(){return Math.max(Ui.dp(this,48),Math.min(screenBounds().width()-Ui.dp(this,16),Ui.dp(this,205*Math.max(1,Math.min(1.5f,getResources().getConfiguration().fontScale)))));}
+    private int overlayWidth(){return TimerCapsule.width(this,!Ui.prefs(this).getBoolean("compact",true),screenBounds().width()-Ui.dp(this,16));}
     private int maxX(){return Math.max(Ui.dp(this,8),screenBounds().width()-layout.width-Ui.dp(this,8));}
-    private int maxY(){return Math.max(Ui.dp(this,28),screenBounds().height()-Math.max(pill==null?0:pill.getHeight(),Ui.dp(this,76))-Ui.dp(this,56));}
+    private int maxY(){return Math.max(Ui.dp(this,28),screenBounds().height()-Math.max(pill==null?0:pill.getHeight(),Ui.dp(this,48))-Ui.dp(this,56));}
     private void clamp() {
         layout.x=Math.max(Ui.dp(this,8),Math.min(layout.x,maxX()));
         layout.y=Math.max(Ui.dp(this,28),Math.min(layout.y,maxY()));
@@ -137,29 +133,31 @@ public final class OverlayService extends Service {
     }
     private void render() {
         if(!running || pill==null) return;
-        boolean solid=Ui.prefs(this).getBoolean("solid",false);
-        if(solidBackground==null||solidBackground!=solid){solidBackground=solid;pillBackground.setColor((Ui.CARD & 0x00ffffff) | (solid?0xff000000:0xef000000));}
+        boolean expanded=!Ui.prefs(this).getBoolean("compact",true);
+        int width=overlayWidth();
+        if(width!=layout.width||expanded!=pill.isExpanded()){
+            boolean rightDocked=layout.x>=maxX()-Ui.dp(this,4);
+            pill.setExpanded(expanded);layout.width=width;
+            settleX.stop();settleY.stop();if(rightDocked)layout.x=maxX();clamp();moveWindow();
+            // Height is known after the expanded detail is laid out.
+            pill.post(()->{clamp();moveWindow();savePosition();});
+        }
         if(!power.isInteractive() || keyguard.isKeyguardLocked() || !Settings.canDrawOverlays(this)) {hide();return;}
         if(!pill.isAttachedToWindow()) { try {clamp();windows.addView(pill,layout);}catch(RuntimeException e){stopSelf();return;} }
         UsageRepository.Snapshot s=snapshot; if(s==null)return;
         long extra=s.usage.activePackage!=null && s.issue==null && s.day.equals(java.time.LocalDate.now())?Math.max(0,Math.min(3000,System.currentTimeMillis()-s.asOf)):0;
-        totalText.setText("TODAY  "+Ui.clock(s.usage.total+extra));
         String pkg=s.usage.activePackage;
         if(!java.util.Objects.equals(namedPackage,pkg) || appLabel==null) {namedPackage=pkg;appLabel=Ui.appName(this,pkg);}
-        appText.setText(s.issue!=null?"Waiting for usage data":appLabel+"  ·  "+Ui.clock(s.usage.perApp.getOrDefault(pkg,0L)+extra));
-        appText.setVisibility(Ui.prefs(this).getBoolean("compact",false)?View.GONE:View.VISIBLE);
+        pill.update(s.usage.total+extra,appLabel,s.usage.perApp.getOrDefault(pkg,0L)+extra,s.issue!=null);
         long minute=(s.usage.total+extra)/60000;
         if(minute!=notificationMinute) {notificationMinute=minute;getSystemService(NotificationManager.class).notify(1,notification(s.usage.total+extra));}
     }
     private void hide() {if(settleX!=null)settleX.stop();if(settleY!=null)settleY.stop();if(pill!=null && pill.isAttachedToWindow()) try{windows.removeView(pill);}catch(IllegalArgumentException ignored){} }
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
-        super.onConfigurationChanged(c);Ui.configure(this);solidBackground=null;
-        if(pill!=null){
-            totalText.setTextColor(Ui.LIME);appText.setTextColor(Ui.INK);pillBackground.setStroke(Ui.dp(this,1),Ui.LINE);
-            if(pill.isAttachedToWindow()){settleX.stop();settleY.stop();layout.width=overlayWidth();clamp();moveWindow();}
-            render();
-        }
+        super.onConfigurationChanged(c);hide();Ui.configure(this);
+        if(running){createPill();render();}
     }
+
     @Override public void onDestroy() {
         shuttingDown=true; running=false; main.removeCallbacksAndMessages(null); hide();
         sendBroadcast(new Intent(STATE_CHANGED).setPackage(getPackageName()));

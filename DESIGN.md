@@ -1,49 +1,51 @@
-# TimeLens interface and interaction system
+# TimeLens design system · 0.3.0
 
-The interface applies the [Apple Design skill linked in the user's guide](https://github.com/dickwu/apple-design-skill/blob/main/SKILL.md), plus the earlier [emilkowalski apple-design skill](https://github.com/emilkowalski/skills/blob/main/skills/apple-design/SKILL.md). This is a native Android utility: accessibility, hierarchy, privacy and typography principles apply; Android system permission screens, fonts, Back behavior and 48dp minimum targets remain Android conventions.
+Applies the [Apple Design skill](https://github.com/dickwu/apple-design-skill/blob/main/SKILL.md) linked in the user's [setup and audit guide](https://agiwithaditya.notion.site/Apple-Design-Skill-Simple-Setup-Website-Audit-Guide-Claude-Code-Codex-400d171fd705817aa761d7d306b3a8f8). This is native Android: use the foundations and craft guidance with Android controls, fonts, permission screens, TalkBack and 48dp touch targets. See [APP_DESIGN_AUDIT.md](APP_DESIGN_AUDIT.md).
 
-[Prompt Motion](https://prompt-motion.com/) remains the requested motion reference. [MOTION.md](MOTION.md) maps the adapted direction to the existing interruptible press, progress and drag springs. Permission status never depends on animation.
+## Thesis
 
-## Design thesis
+Make actual time easy to glance at, then let people choose the detail. The signature is a small clock capsule: one icon and the total, with app detail a tap away. Settings reuses the same component and actual available data. Neutral surfaces and a restrained blue accent leave measured time in charge. The segmented track represents the user's adjustable daily reference; it is not a 24-hour clock or an app blocker.
 
-Make actual app time visible, with a short, understandable route through Android's permission controls. The signature is the reference ring and small live timer; permission setup uses a quiet checklist with written status and a single next action. Recovery is part of setup, not a help page people must discover elsewhere. The current request and its action precede the full access checklist so the next step is visible sooner.
+## Semantic tokens
 
-## Semantic color tokens
-
-Colors come from Android day/night resources and follow the phone's appearance automatically. Ratios below are calculated from the sRGB values in resources, not sampled from screenshots.
+Ratios use sRGB luminance calculated from resource values. Day/night colors follow the phone.
 
 | Role | Light | Dark | Contrast, light / dark |
 | --- | --- | --- | --- |
-| Surface | `#F5F7F4` | `#0B1014` | Background |
-| Card | `#FFFFFF` | `#161E23` | Background |
-| Content | `#14221A` | `#F1F5ED` | On card: 16.49 / 15.29 |
-| Secondary content | `#55655B` | `#A2AFB3` | On card: 6.18 / 7.49 |
-| Action/accent | `#2D6634` | `#C8F78D` | On card: 6.86 / 13.78 |
-| Tinted surface | `#E9F1E7` | `#20332B` | Secondary content: 5.36 / 5.94 |
+| Surface | `#F6F7FA` | `#101216` | Background |
+| Card / capsule | `#FFFFFF` | `#1C2028` | Background |
+| Primary content | `#171C26` | `#F1F4FA` | On card: 17.07 / 14.81 |
+| Secondary content | `#5D6676` | `#ADB6C5` | On card: 5.79 / 7.99 |
+| Action / selection | `#3659D9` | `#ABBDFF` | On card: 5.85 / 8.90 |
+| Secondary action surface | `#EBEFFE` | `#272F48` | Primary content: 14.88 / 12.01 |
+| Divider / empty track | `#E1E5ED` | `#343C4B` | Decorative grouping |
 
-Primary buttons use the surface color as text on the accent: 6.37:1 light / 15.61:1 dark. Secondary buttons use content on `#DCE4DE` / `#2B373D`: 12.72:1 / 11.08:1. All these text pairs exceed 4.5:1.
+Primary button labels use surface on accent: 5.46 / 10.23. Secondary copy on tint: 5.05 / 6.48. All listed text pairs exceed 4.5:1. The capsule is opaque so its contrast stays stable over photos and video, with a 1dp boundary and 4dp elevation.
 
 ## Type and layout
 
-- Android system sans, normal and medium weights; tabular numeric timer digits. Setup display 32sp, detail title 22sp, body/actions 16sp, supporting labels 13–15sp. Data total 48sp, ring percentage 24sp.
-- Native TextViews scale with the system setting, including the ring's percentage. Canvas draws only the ring, not text.
-- Compact phones: one scrollable column, 24dp page inset, 20dp card inset, wrapping actions with minimum 52dp height. Checklist status sits below its name, so large text does not collide with a right-hand badge. Landscape can scroll to every action.
-- Wider windows keep the same reading order and actions. A dedicated tablet navigation redesign is outside this fix; no functionality depends on width.
-- The earlier decorative privacy chip in the header is removed. A short privacy explanation appears beside the permission decision where it is useful.
-- Vector icons share the existing stroke style. Action views expose the Android Button accessibility role; statuses use words as well as color. Native ripple/focus feedback and system Back remain available.
+Android system sans, regular and medium weights, with tabular numbers. Scale: total 46sp; title 32sp; section 20–22sp; body/actions 15–16sp; support 13–14sp; tabs 12sp. No canvas-rendered text. Native text scales with the system.
 
-## Permission interaction
+| Surface | Compact layout | Wider / larger text |
+| --- | --- | --- |
+| App shell | Scrollable column, 24dp page and 20dp card insets | Centered within 720dp; same functions |
+| Today | Total, reference, current app, timer action, ranked apps | App durations move below names above 1.2 font scale |
+| History | Seven day cards with explicit detail affordance | Date and duration stack above 1.2 font scale |
+| Day detail | Scrollable app list, title and Done outside scroll | Maximum 560dp width, bounded to current window |
+| Capsule | Clock + total; 132dp width, minimum 48dp height | Grows with font scale and clamps to window bounds |
+| Expanded capsule | Today total + app name/time; 224dp width | Wrapping app text and scalable height |
+| Settings | Interactive capsule, reference, access, privacy | Android shortcuts progressively disclosed |
 
-1. Read actual grants on opening, returning from Settings and while visible. Usage Access and Display over apps are required for the floating timer. Notifications are recommended and optional; app-level and timer-channel blocking are both checked.
-2. Explain the current missing permission, then let the person open its Android screen. Do not launch settings or a runtime dialog without a tap.
-3. If Usage Access is still off after returning, show conditional restricted-settings recovery with an App info shortcut. A settings visit never counts as a grant.
-4. Request notifications on a tap. Denial leaves a choice to continue. A later retry opens Android notification settings if another runtime prompt is unavailable.
-5. Start the timer only after an explicit Start tap. Not now and Android Back open the dashboard with a setup action; a later foreground visit offers missing access again, as requested.
+Buttons have 52dp minimum height. Switches and navigation meet Android's 48dp target. Simple original vector icons share rounded strokes. The clock denotes time and the four-app grid introduces app detail. No Apple fonts or SF Symbols are bundled.
 
-## Motion
+## Flow and motion
 
-Press feedback begins on touch down and uses a critically damped scalar spring. The timer follows a drag, projects release velocity and settles to an edge with independent interruptible X/Y springs. Native frame callbacks drive updates; the response is approximately 0.4 seconds with damping ratio 1.0. Android's disabled animator setting skips motion. A small haptic marks actions and drag release. No new decorative setup animation is needed.
+Read actual permission grants on opening and returning. Usage and overlay access are required for the timer; notifications are optional. Settings open on a tap. Recovery remains conditional. Not now, Back and optional notification continuation stay available; missing access returns on a later visit as requested.
 
-## Verification
+History uses disclosure text and ripple. Unavailable days remain distinct from zero. The daily detail's Done button stays outside its scrolling content. Capsule and preview expose meaningful descriptions and Show/Hide app detail accessibility actions. Reset timer position is a button alternative to dragging.
 
-See [PERMISSION_UX_REVIEW.md](PERMISSION_UX_REVIEW.md) for the audit and platform boundary. The workflow records Android 15–17 permission-flow checks and screenshots, including light appearance and dark setup at 200% font scale. Its result is the authority on whether those scenarios passed. The Samsung restricted-settings confirmation, TalkBack traversal, battery behavior and motion feel require checking on the actual phone.
+Press and reference changes use interruptible springs and honor disabled Android animators. The timer follows the finger and docks at an edge. Frequent time updates do not pulse, bounce or move the window. No animated blur or promotional video is needed. See [MOTION.md](MOTION.md).
+
+## Validation boundary
+
+The APK workflow runs native checks on Android 15, 16 and 17 and captures setup, recovery, Today, History, daily detail, Settings, and the actual compact/expanded/docked capsule. Covered appearances are normal light and dark 200% text. Check the result for the matching commit; a pending run is not a pass. Physical Samsung settings, TalkBack traversal, outdoor viewing and gesture feel still require device review.

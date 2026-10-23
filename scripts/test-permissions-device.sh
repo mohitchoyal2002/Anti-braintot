@@ -56,8 +56,10 @@ run_case overlay allow deny deny
 run_case notifications allow allow deny
 run_case complete allow allow allow
 run_case channel allow allow allow
+run_case design allow allow allow
 "$adb_path" shell cmd uimode night yes
 "$adb_path" shell settings put system font_scale 2.0
 run_case large deny deny deny
+run_case design-large allow allow allow
 "$adb_path" shell settings put system font_scale 1.0
 printf '%s\n' 'All permission flow scenarios passed.'

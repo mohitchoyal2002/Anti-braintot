@@ -24,11 +24,11 @@ final class PermissionSetup {
                       boolean recovery, boolean skipNotifications, String feedback, Actions actions) {
         PermissionState.Step step = state.next(skipNotifications);
         boolean ready = step == PermissionState.Step.READY;
-        page.addView(Ui.text(c, ready ? "READY WHEN YOU ARE" : "SET UP TIMELENS", 12, Ui.LIME, true));
+        page.addView(Ui.text(c, ready ? "READY WHEN YOU ARE" : "SET UP TIMELENS", 12, Ui.MUTED, true));
         Ui.gap(page, 12);
         page.addView(Ui.text(c, ready ? "A little awareness.\nMore choice." : "Make time visible.", 32, Ui.INK, true));
         Ui.gap(page, 12);
-        page.addView(Ui.text(c, "Your time across every app. Kept on your phone.", 16, Ui.MUTED, false));
+        page.addView(Ui.text(c, "Screen time, at a glance. Your data stays on this phone.", 16, Ui.MUTED, false));
         Ui.gap(page, 24);
 
         page.addView(Ui.text(c, state.grantedCount() + " of 3 permissions allowed", 14, Ui.MUTED, true));
@@ -64,21 +64,21 @@ final class PermissionSetup {
                 }
                 break;
             case OVERLAY:
-                title(c, detail, "Keep the total in sight", "Display over other apps lets a small, movable timer show today’s total and your current app’s time while you use other apps.");
+                title(c, detail, "Keep the total in sight", "Display over other apps lets a small clock and today’s total stay in view. Tap the timer when you want your current app’s time.");
                 detail.addView(Ui.text(c, "On the next screen, choose TimeLens and turn on Allow display over other apps. You can stop the timer at any time.", 15, Ui.MUTED, false));
                 Ui.gap(detail, 18);
-                detail.addView(Ui.button(c, "Allow floating timer", true, actions::overlay));
+                detail.addView(Ui.button(c, "Open display settings", true, actions::overlay));
                 break;
             case NOTIFICATIONS:
                 title(c, detail, "A quick way to stop", "Allow the timer notification to see that TimeLens is running and stop it from your notification shade.");
                 detail.addView(Ui.text(c, "Recommended, but optional. You can also stop the timer from Today.", 15, Ui.MUTED, false));
                 Ui.gap(detail, 18);
-                detail.addView(Ui.button(c, "Allow timer notifications", true, actions::notifications));
+                detail.addView(Ui.button(c, "Set up notifications", true, actions::notifications));
                 Ui.gap(detail, 10);
                 detail.addView(Ui.button(c, "Continue without notifications", false, actions::skipNotifications));
                 break;
             case READY:
-                title(c, detail, "Your timer is ready", "Start when you want. Drag the floating timer to move it; tap it to show or hide the current app’s time.");
+                title(c, detail, "Your timer is ready", "Start when you want. A small clock shows today’s total. Drag to move it; tap to see the current app’s time.");
                 if (!state.notifications) {
                     detail.addView(Ui.text(c, "Notifications are off. Use Today to stop the timer.", 15, Ui.MUTED, false));
                     Ui.gap(detail, 18);
@@ -121,7 +121,7 @@ final class PermissionSetup {
                                       String label, boolean allowed, boolean optional) {
         LinearLayout row = Ui.row(c);
         row.setPadding(0, Ui.dp(c, 10), 0, Ui.dp(c, 10));
-        TextView badge = Ui.text(c, allowed ? "✓" : number, 16, Ui.LIME, true);
+        TextView badge = Ui.text(c, allowed ? "✓" : number, 16, Ui.ACCENT, true);
         badge.setGravity(Gravity.CENTER);
         badge.setBackground(Ui.rounded(Ui.TINT, 18, c));
         badge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);

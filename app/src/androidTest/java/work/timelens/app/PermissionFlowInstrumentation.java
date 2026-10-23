@@ -14,6 +14,9 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.widget.TextView;
 import java.io.File;
 import java.io.FileInputStream;
@@ -78,7 +81,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                 case "overlay":
                     expect("Keep the total in sight");
                     expect("1 of 3 permissions allowed");
-                    verifyIntent("Allow floating timer",Settings.ACTION_MANAGE_OVERLAY_PERMISSION,true);
+                    verifyIntent("Open display settings",Settings.ACTION_MANAGE_OVERLAY_PERMISSION,true);
                     capture("overlay");
                     shell("input keyevent KEYCODE_BACK");
                     await("Continue permission setup");
@@ -103,13 +106,13 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     await("A quick way to stop");
                     break;
                 case "complete":
-                    expect("Your time, in focus.");
+                    expect("App activity");
                     absent("SET UP TIMELENS");
                     capture("dashboard");
                     tap("History");
-                    expect("YOUR RECENT DAYS");
+                    expect("Your last seven days");
                     shell("input keyevent KEYCODE_BACK");
-                    await("Your time, in focus.");
+                    await("App activity");
                     // A real OS revocation must reopen setup on return.
                     shell("input keyevent KEYCODE_HOME");
                     awaitPaused();
@@ -120,7 +123,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                 case "channel":
                     expect("A quick way to stop");
                     expect("2 of 3 permissions allowed");
-                    verifyIntent("Allow timer notifications",Settings.ACTION_APP_NOTIFICATION_SETTINGS,false);
+                    verifyIntent("Set up notifications",Settings.ACTION_APP_NOTIFICATION_SETTINGS,false);
                     break;
                 case "large":
                     expect("Know where your day goes");
@@ -128,6 +131,23 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("Is the switch blocked?");
                     runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
                     capture("large-text");
+                    break;
+                case "design":
+                case "design-large":
+                    expect("App activity");
+                    runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
+                    capture("today");
+                    tap("History");await("Yesterday");capture("history");
+                    await("View app activity");tap("View app activity →");
+                    verifyDayDialog();
+                    tap("Settings");expect("Quiet by default.");
+                    runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
+                    capture("settings");
+                    tap("Today");tap("Start floating timer");awaitRunning();
+                    shell("input keyevent KEYCODE_HOME");awaitPaused();
+                    verifyCapsule("design-large".equals(scenario));
+                    runOnMainSync(()->activity.stopService(new Intent(activity,OverlayService.class)));
+                    awaitStopped();
                     break;
                 default:throw new AssertionError("Unknown scenario "+scenario);
             }
@@ -208,6 +228,79 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         long until=SystemClock.uptimeMillis()+5000;
         while(OverlayService.running&&SystemClock.uptimeMillis()<until)SystemClock.sleep(100);
         if(OverlayService.running)throw new AssertionError("Foreground timer did not stop");assertions++;
+    }
+    private AccessibilityNodeInfo capsule(boolean expanded){
+        AccessibilityServiceInfo serviceInfo=getUiAutomation().getServiceInfo();
+        serviceInfo.flags|=AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        getUiAutomation().setServiceInfo(serviceInfo);
+        long until=SystemClock.uptimeMillis()+8000;
+        while(SystemClock.uptimeMillis()<until){
+            for(AccessibilityWindowInfo window:getUiAutomation().getWindows()){
+                AccessibilityNodeInfo found=capsuleNode(window.getRoot(),expanded);
+                if(found!=null){assertions++;return found;}
+            }
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("Live timer accessibility action missing, expanded="+expanded);
+    }
+    private AccessibilityNodeInfo capsuleNode(AccessibilityNodeInfo node,boolean expanded){
+        if(node==null)return null;
+        String label=String.valueOf(node.getContentDescription());
+        if(label.startsWith("Screen time today,")&&label.contains(expanded?"Hide app detail":"Show app detail"))return node;
+        for(int i=0;i<node.getChildCount();i++){
+            AccessibilityNodeInfo found=capsuleNode(node.getChild(i),expanded);if(found!=null)return found;
+        }
+        return null;
+    }
+    private android.graphics.Rect capsuleBounds(AccessibilityNodeInfo node){
+        android.graphics.Rect bounds=new android.graphics.Rect();node.getBoundsInScreen(bounds);return bounds;
+    }
+    private void verifyCapsule(boolean large)throws Exception{
+        AccessibilityNodeInfo compact=capsule(false);
+        android.graphics.Rect compactBounds=capsuleBounds(compact);
+        if(compactBounds.height()<Ui.dp(activity,48))throw new AssertionError("Capsule touch target is below 48dp");
+        if(!large&&compactBounds.width()>Ui.dp(activity,136))throw new AssertionError("Compact timer is too wide");
+        if(!compact.isClickable())throw new AssertionError("Capsule is not accessible as a control");
+        assertions+=3;capture("capsule-compact");
+        if(!compact.performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new AssertionError("Cannot expand capsule");
+        android.graphics.Rect expandedBounds=capsuleBounds(capsule(true));
+        long expandedUntil=SystemClock.uptimeMillis()+4000;
+        while(expandedBounds.height()<=compactBounds.height()&&SystemClock.uptimeMillis()<expandedUntil){
+            SystemClock.sleep(100);expandedBounds=capsuleBounds(capsule(true));
+        }
+        if(expandedBounds.height()<=compactBounds.height())throw new AssertionError("App detail did not expand");
+        assertions++;capture("capsule-expanded");
+        if(!capsule(true).performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new AssertionError("Cannot collapse capsule");
+        compactBounds=capsuleBounds(capsule(false));
+        int originalX=Ui.prefs(getTargetContext()).getInt("overlay_x",Ui.dp(activity,16));
+        int displayWidth=getTargetContext().getResources().getDisplayMetrics().widthPixels;
+        int displayHeight=getTargetContext().getResources().getDisplayMetrics().heightPixels;
+        shell("input touchscreen swipe "+compactBounds.centerX()+" "+compactBounds.centerY()+" "+(displayWidth-Ui.dp(activity,32))+" "+(compactBounds.centerY()+Ui.dp(activity,120))+" 450");
+        long until=SystemClock.uptimeMillis()+5000;
+        while(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX&&SystemClock.uptimeMillis()<until)SystemClock.sleep(100);
+        if(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX)throw new AssertionError("Drag position was not saved");
+        android.graphics.Rect moved=capsuleBounds(capsule(false));
+        if(moved.left<0||moved.top<0||moved.right>displayWidth||moved.bottom>displayHeight)throw new AssertionError("Capsule moved outside the display");
+        assertions+=2;capture("capsule-docked");
+    }
+    private void verifyDayDialog()throws Exception{
+        long until=SystemClock.uptimeMillis()+5000;
+        while(SystemClock.uptimeMillis()<until){
+            AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+            if(root!=null){
+                for(AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText("Done")){
+                    if(node.isClickable()){
+                        android.graphics.Rect bounds=capsuleBounds(node);
+                        if(bounds.height()<Ui.dp(activity,48))throw new AssertionError("Day detail close action is too small");
+                        capture("day-detail");
+                        if(!node.performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new AssertionError("Cannot close day detail");
+                        assertions+=2;waitForIdleSync();return;
+                    }
+                }
+            }
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("Day detail has no visible Done action");
     }
     private void checkTextLayout(View view){
         if(view instanceof TextView){

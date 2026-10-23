@@ -8,13 +8,13 @@ import android.widget.*;
 import java.util.*;
 
 final class Ui {
-    static int BG, CARD, INK, MUTED, LIME, LINE, TINT, RIPPLE;
+    static int BG, CARD, INK, MUTED, ACCENT, LINE, TINT, RIPPLE;
     static boolean dark;
     static void configure(Context c) {
         dark=(c.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         BG=c.getColor(R.color.surface); CARD=c.getColor(R.color.card); INK=c.getColor(R.color.ink);
-        MUTED=c.getColor(R.color.muted); LIME=c.getColor(R.color.accent); LINE=c.getColor(R.color.line);
+        MUTED=c.getColor(R.color.muted); ACCENT=c.getColor(R.color.accent); LINE=c.getColor(R.color.line);
         TINT=c.getColor(R.color.tint); RIPPLE=dark?0x22ffffff:0x18000000;
     }
     static int dp(Context c,float v) { return Math.round(c.getResources().getDisplayMetrics().density*v); }
@@ -27,15 +27,41 @@ final class Ui {
         t.setIncludeFontPadding(false);return t;
     }
     static LinearLayout column(Context c) { LinearLayout l=new LinearLayout(c); l.setOrientation(LinearLayout.VERTICAL); return l; }
+    static LinearLayout readingColumn(Context c) {
+        LinearLayout l=new LinearLayout(c){
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                int width=Math.min(View.MeasureSpec.getSize(widthSpec),dp(c,720));
+                super.onMeasure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),heightSpec);
+            }
+        };
+        l.setOrientation(LinearLayout.VERTICAL);return l;
+    }
     static LinearLayout row(Context c) { LinearLayout l=new LinearLayout(c); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
     static LinearLayout card(Context c) {
         LinearLayout l=column(c); l.setPadding(dp(c,20),dp(c,20),dp(c,20),dp(c,20)); l.setBackground(rounded(CARD,24,c)); return l;
     }
     static void gap(LinearLayout parent,int dp) { View v=new View(parent.getContext()); parent.addView(v,new LinearLayout.LayoutParams(1,dp(parent.getContext(),dp))); }
+    static void divider(LinearLayout parent) {
+        View line=new View(parent.getContext());line.setBackgroundColor(LINE);
+        parent.addView(line,new LinearLayout.LayoutParams(-1,dp(parent.getContext(),1)));
+    }
+    static Switch settingToggle(Context c,LinearLayout parent,String label,boolean checked){
+        LinearLayout row=row(c);row.setMinimumHeight(dp(c,52));
+        TextView words=text(c,label,16,INK,false);words.setPadding(0,dp(c,8),dp(c,12),dp(c,8));
+        words.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
+        Switch toggle=new Switch(c);toggle.setContentDescription(label);toggle.setChecked(checked);
+        toggle.setMinimumWidth(dp(c,52));toggle.setMinimumHeight(dp(c,48));
+        android.content.res.ColorStateList tint=new android.content.res.ColorStateList(
+                new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{ACCENT,MUTED});
+        toggle.setThumbTintList(tint);row.addView(toggle);row.setOnClickListener(v->toggle.setChecked(!toggle.isChecked()));
+        row.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        parent.addView(row);return toggle;
+    }
     static TextView button(Context c,String label,boolean primary,Runnable action) {
         TextView b=text(c,label,16,primary?BG:INK,true); b.setGravity(Gravity.CENTER); b.setPadding(dp(c,18),dp(c,15),dp(c,18),dp(c,15));
         b.setMinHeight(dp(c,52));
-        b.setBackground(new RippleDrawable(android.content.res.ColorStateList.valueOf(RIPPLE),rounded(primary?LIME:LINE,18,c),null));
+        b.setBackground(new RippleDrawable(android.content.res.ColorStateList.valueOf(RIPPLE),rounded(primary?ACCENT:TINT,18,c),null));
         SpringValue press=new SpringValue(1,0.001,v->{b.setScaleX(v);b.setScaleY(v);},null);
         b.setOnTouchListener((view,event)->{switch(event.getActionMasked()){case MotionEvent.ACTION_DOWN:press.target(0.975f);break;case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:press.target(1);break;}return false;});
         b.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){public void onViewAttachedToWindow(View v){}public void onViewDetachedFromWindow(View v){press.stop();}});

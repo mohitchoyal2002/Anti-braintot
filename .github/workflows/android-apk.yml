@@ -54,6 +54,8 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 35
+          avd-name: timelens-api-35
+          disk-size: 6G
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -64,6 +66,8 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 36
+          avd-name: timelens-api-36
+          disk-size: 6G
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -75,6 +79,8 @@ jobs:
         with:
           # Google's stable Android 17 SDK/image package is named 37.0.
           api-level: '37.0'
+          avd-name: timelens-api-37-0
+          disk-size: 6G
           target: google_apis
           arch: x86_64
           profile: pixel_6

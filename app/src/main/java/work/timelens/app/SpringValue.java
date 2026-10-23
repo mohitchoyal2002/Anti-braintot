@@ -20,7 +20,7 @@ final class SpringValue implements Choreographer.FrameCallback {
     void target(float next) {target=next;begin();}
     void release(float position,float next,float releaseVelocity) {stop();value=position;target=next;velocity=releaseVelocity;begin();}
     private void begin() {
-        if(!ValueAnimator.areAnimatorsEnabled()){jump((float)target);if(settled!=null)settled.run();return;}
+        if(!Ui.animationsEnabled()){jump((float)target);if(settled!=null)settled.run();return;}
         if(!running){running=true;lastFrame=0;Choreographer.getInstance().postFrameCallback(this);}
     }
     @Override public void doFrame(long at) {

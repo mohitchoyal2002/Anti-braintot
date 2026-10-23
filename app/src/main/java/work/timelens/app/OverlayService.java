@@ -19,6 +19,8 @@ public final class OverlayService extends Service {
     private ScheduledExecutorService worker;
     private WindowManager windows;
     private TimerCapsule pill;
+    private Dialog floatingWindow;
+    private WindowMaterial material;
     private WindowManager.LayoutParams layout;
     private UsageRepository repository;
     private volatile UsageRepository.Snapshot snapshot;
@@ -72,10 +74,16 @@ public final class OverlayService extends Service {
         snapshot=repository.refresh(); main.post(this::render);
     }
     private void createPill() {
-        pill=new TimerCapsule(this);
+        Context visual=Build.VERSION.SDK_INT>=30?createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null):this;
+        floatingWindow=new Dialog(visual,R.style.FloatingMaterialTheme);floatingWindow.setCancelable(false);floatingWindow.setCanceledOnTouchOutside(false);
+        pill=new TimerCapsule(floatingWindow.getContext());pill.useWindowMaterial();floatingWindow.setContentView(pill);
         pill.setExpanded(!Ui.prefs(this).getBoolean("compact",true));
-        layout=new WindowManager.LayoutParams(overlayWidth(),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
+        layout=new WindowManager.LayoutParams(overlayWidth(),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,PixelFormat.TRANSLUCENT);
         layout.gravity=Gravity.TOP|Gravity.START; layout.x=Ui.prefs(this).getInt("overlay_x",Ui.dp(this,16)); layout.y=Ui.prefs(this).getInt("overlay_y",Ui.dp(this,100));
+        floatingWindow.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+        floatingWindow.getWindow().setAttributes(layout);floatingWindow.getWindow().setWindowAnimations(0);
+        material=new WindowMaterial(this,floatingWindow.getWindow(),false);
+        pill.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(b-t!=ob-ot){clamp();moveWindow();savePosition();}});
         settleX=new SpringValue(layout.x,0.4,v->{layout.x=Math.round(v);moveWindow();},this::savePosition);
         settleY=new SpringValue(layout.y,0.4,v->{layout.y=Math.round(v);moveWindow();},this::savePosition);
         pill.setOnTouchListener(new View.OnTouchListener() {
@@ -94,7 +102,7 @@ public final class OverlayService extends Service {
                         return true;
                     case MotionEvent.ACTION_UP:
                         pill.setPressed(false);
-                        if(moved){velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();float projected=layout.x+vx*0.099f;float targetX=projected>(Ui.dp(OverlayService.this,8)+maxX())/2f?maxX():Ui.dp(OverlayService.this,8);float targetY=Math.max(Ui.dp(OverlayService.this,28),Math.min(maxY(),layout.y+vy*0.06f));settleX.release(layout.x,targetX,vx);settleY.release(layout.y,targetY,vy);v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);}else v.performClick();
+                        if(moved){velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();float projected=layout.x+vx*0.099f;float targetX=projected>(Ui.dp(OverlayService.this,8)+maxX())/2f?maxX():Ui.dp(OverlayService.this,8);float targetY=Math.max(Ui.dp(OverlayService.this,28),Math.min(maxY(),layout.y+vy*0.06f));settleX.release(layout.x,targetX,vx);settleY.release(layout.y,targetY,vy);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);}else v.performClick();
                         velocity.recycle();velocity=null;return true;
                     case MotionEvent.ACTION_CANCEL:
                         pill.setPressed(false);clamp();moveWindow();savePosition();if(velocity!=null){velocity.recycle();velocity=null;}return true;
@@ -104,7 +112,7 @@ public final class OverlayService extends Service {
         });
         pill.setOnClickListener(v->{
             Ui.prefs(this).edit().putBoolean("compact",pill.isExpanded()).apply();
-            v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);render();
+            Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);render();
         });
 
     }
@@ -126,7 +134,7 @@ public final class OverlayService extends Service {
         return edge+(overshoot*dimension*0.55f)/(dimension+0.55f*Math.abs(overshoot));
     }
     private void moveWindow(){
-        try{if(pill!=null&&windowAdded)windows.updateViewLayout(pill,layout);}catch(IllegalArgumentException ignored){}
+        try{if(pill!=null&&windowAdded)floatingWindow.getWindow().setAttributes(layout);}catch(IllegalArgumentException ignored){}
     }
     private void savePosition(){
         Ui.prefs(this).edit().putInt("overlay_x",layout.x).putInt("overlay_y",layout.y).apply();
@@ -145,12 +153,13 @@ public final class OverlayService extends Service {
         if(!power.isInteractive() || keyguard.isKeyguardLocked() || !Settings.canDrawOverlays(this)) {hide();return;}
         if(!windowAdded) {
             try {
-                clamp();windows.addView(pill,layout);
+                clamp();floatingWindow.getWindow().setAttributes(layout);floatingWindow.show();material.refresh();
                 // Registration precedes View attachment. A refresh can arrive before
                 // the first frame; isAttachedToWindow() would add the same view twice.
                 windowAdded=true;
             }catch(RuntimeException e){android.util.Log.e("TimeLens","Could not attach floating timer",e);stopSelf();return;}
         }
+        material.refresh();
         UsageRepository.Snapshot s=snapshot; if(s==null)return;
         long extra=s.usage.activePackage!=null && s.issue==null && s.day.equals(java.time.LocalDate.now())?Math.max(0,Math.min(3000,System.currentTimeMillis()-s.asOf)):0;
         String pkg=s.usage.activePackage;
@@ -161,7 +170,7 @@ public final class OverlayService extends Service {
     }
     private void hide() {
         if(settleX!=null)settleX.stop();if(settleY!=null)settleY.stop();
-        if(pill!=null&&windowAdded){try{windows.removeView(pill);}catch(IllegalArgumentException ignored){}finally{windowAdded=false;}}
+        if(pill!=null&&windowAdded){try{floatingWindow.dismiss();}catch(IllegalArgumentException ignored){}finally{windowAdded=false;}}
     }
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);hide();Ui.configure(this);

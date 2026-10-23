@@ -1,10 +1,13 @@
 <resources>
-    <color name="surface">#F6F7FA</color>
+    <color name="surface">#F5F5F7</color>
     <color name="card">#FFFFFF</color>
-    <color name="ink">#171C26</color>
-    <color name="muted">#5D6676</color>
-    <color name="accent">#3659D9</color>
-    <color name="line">#E1E5ED</color>
-    <color name="tint">#EBEFFE</color>
+    <color name="ink">#1D1D1F</color>
+    <color name="muted">#626268</color>
+    <color name="accent">#0066CC</color>
+    <color name="action">#0066CC</color>
+    <color name="on_action">#FFFFFF</color>
+    <color name="line">#E0E0E0</color>
+    <color name="tint">#EBF3FC</color>
+    <color name="icon_background">#F5F5F7</color>
     <bool name="light_system_bars">true</bool>
 </resources>

@@ -28,7 +28,7 @@ final class PermissionSetup {
         Ui.gap(page, 12);
         page.addView(Ui.text(c, ready ? "A little awareness.\nMore choice." : "Make time visible.", 32, Ui.INK, true));
         Ui.gap(page, 12);
-        page.addView(Ui.text(c, "Screen time, at a glance. Your data stays on this phone.", 16, Ui.MUTED, false));
+        page.addView(Ui.text(c, "Screen time, at a glance. Your data stays on this phone.", 17, Ui.MUTED, false));
         Ui.gap(page, 24);
 
         page.addView(Ui.text(c, state.grantedCount() + " of 3 permissions allowed", 14, Ui.MUTED, true));
@@ -47,7 +47,7 @@ final class PermissionSetup {
                     title(c, detail, "Is the switch blocked?", "If Android says “App was denied access” or “Controlled by restricted setting”, confirm restricted settings on your phone.");
                     detail.addView(Ui.text(c, "App info → ⋮ → Allow restricted settings", 16, Ui.INK, true));
                     Ui.gap(detail, 10);
-                    detail.addView(Ui.text(c, "Follow Android’s confirmation, then return here and open Usage access again.", 16, Ui.MUTED, false));
+                    detail.addView(Ui.text(c, "Follow Android’s confirmation, then return here and open Usage access again.", 17, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                     detail.addView(Ui.button(c, "Open App info", true, actions::appInfo));
                     Ui.gap(detail, 10);
@@ -56,7 +56,7 @@ final class PermissionSetup {
                     detail.addView(Ui.text(c, "Only allow apps you trust. If the menu is missing, your phone’s security settings or administrator may control access. TimeLens cannot change that setting.", 14, Ui.MUTED, false));
                 } else {
                     title(c, detail, "Know where your day goes", "Usage access lets TimeLens read which app was active and for how long. It does not read messages or record your screen.");
-                    detail.addView(Ui.text(c, "On the next screen, select TimeLens if shown, then turn on Allow usage access.", 15, Ui.MUTED, false));
+                    detail.addView(Ui.text(c, "On the next screen, select TimeLens if shown, then turn on Allow usage access.", 17, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                     detail.addView(Ui.button(c, "Open usage access", true, actions::usage));
                     Ui.gap(detail, 10);
@@ -65,13 +65,13 @@ final class PermissionSetup {
                 break;
             case OVERLAY:
                 title(c, detail, "Keep the total in sight", "Display over other apps lets a small clock and today’s total stay in view. Tap the timer when you want your current app’s time.");
-                detail.addView(Ui.text(c, "On the next screen, choose TimeLens and turn on Allow display over other apps. You can stop the timer at any time.", 15, Ui.MUTED, false));
+                detail.addView(Ui.text(c, "On the next screen, choose TimeLens and turn on Allow display over other apps. You can stop the timer at any time.", 17, Ui.MUTED, false));
                 Ui.gap(detail, 18);
                 detail.addView(Ui.button(c, "Open display settings", true, actions::overlay));
                 break;
             case NOTIFICATIONS:
                 title(c, detail, "A quick way to stop", "Allow the timer notification to see that TimeLens is running and stop it from your notification shade.");
-                detail.addView(Ui.text(c, "Recommended, but optional. You can also stop the timer from Today.", 15, Ui.MUTED, false));
+                detail.addView(Ui.text(c, "Recommended, but optional. You can also stop the timer from Today.", 17, Ui.MUTED, false));
                 Ui.gap(detail, 18);
                 detail.addView(Ui.button(c, "Set up notifications", true, actions::notifications));
                 Ui.gap(detail, 10);
@@ -80,7 +80,7 @@ final class PermissionSetup {
             case READY:
                 title(c, detail, "Your timer is ready", "Start when you want. A small clock shows today’s total. Drag to move it; tap to see the current app’s time.");
                 if (!state.notifications) {
-                    detail.addView(Ui.text(c, "Notifications are off. Use Today to stop the timer.", 15, Ui.MUTED, false));
+                    detail.addView(Ui.text(c, "Notifications are off. Use Today to stop the timer.", 17, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                 }
                 detail.addView(Ui.button(c, "Start floating timer", true, actions::start));
@@ -113,7 +113,7 @@ final class PermissionSetup {
     private static void title(Context c, LinearLayout parent, String title, String description) {
         parent.addView(Ui.text(c, title, 22, Ui.INK, true));
         Ui.gap(parent, 10);
-        parent.addView(Ui.text(c, description, 16, Ui.MUTED, false));
+        parent.addView(Ui.text(c, description, 17, Ui.MUTED, false));
         Ui.gap(parent, 18);
     }
 

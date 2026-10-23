@@ -37,6 +37,9 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         Bundle result=new Bundle();
         String scenario=arguments.getString("scenario","usage");
         try {
+            if("design-large".equals(scenario)){
+                Ui.prefs(getTargetContext()).edit().putBoolean("reduce_transparency",true).putBoolean("motion",false).putBoolean("haptics",false).commit();
+            }
             if("channel".equals(scenario)){
                 getTargetContext().getSystemService(NotificationManager.class).createNotificationChannel(
                         new NotificationChannel("timer","Live screen-time timer",NotificationManager.IMPORTANCE_NONE));
@@ -129,20 +132,22 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("Know where your day goes");
                     tap("Usage switch disabled?");
                     expect("Is the switch blocked?");
-                    runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
+                    auditCurrentLayout();
                     capture("large-text");
                     break;
                 case "design":
                 case "design-large":
                     expect("App activity");
-                    runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
+                    auditCurrentLayout();
                     capture("today");
                     tap("History");await("Yesterday");capture("history");
                     await("View app activity");tap("View app activity →");
                     verifyDayDialog();
                     tap("Settings");expect("Quiet by default.");
-                    runOnMainSync(()->checkTextLayout(activity.getWindow().getDecorView()));
+                    auditCurrentLayout();
                     capture("settings");
+                    if("design".equals(scenario))verifyFeedbackSettings();
+                    verifyAppIcon();
                     tap("Today");tap("Start floating timer");awaitRunning();
                     shell("input keyevent KEYCODE_HOME");awaitPaused();
                     verifyCapsule("design-large".equals(scenario));
@@ -302,7 +307,26 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         }
         throw new AssertionError("Day detail has no visible Done action");
     }
+    private void verifyFeedbackSettings(){
+        tap("Reduce transparency");
+        if(!Ui.prefs(getTargetContext()).getBoolean("reduce_transparency",false))throw new AssertionError("Transparency preference did not save");
+        if(WindowMaterial.allowed(getTargetContext()))throw new AssertionError("Reduce transparency did not disable glass");
+        tap("Animations");if(Ui.animationsEnabled())throw new AssertionError("Motion preference was ignored");
+        tap("Haptic feedback");if(Ui.prefs(getTargetContext()).getBoolean("haptics",true))throw new AssertionError("Haptic preference did not save");
+        assertions+=4;
+        tap("Reduce transparency");tap("Animations");tap("Haptic feedback");
+    }
+    private void verifyAppIcon()throws Exception{
+        android.graphics.drawable.Drawable icon=getTargetContext().getPackageManager().getApplicationIcon("work.timelens.app");
+        if(!(icon instanceof android.graphics.drawable.AdaptiveIconDrawable))throw new AssertionError("Launcher icon is not adaptive");
+        if(android.os.Build.VERSION.SDK_INT>=33&&((android.graphics.drawable.AdaptiveIconDrawable)icon).getMonochrome()==null)throw new AssertionError("Themed launcher icon is missing");
+        Bitmap bitmap=Bitmap.createBitmap(432,432,Bitmap.Config.ARGB_8888);
+        icon.setBounds(0,0,432,432);icon.draw(new android.graphics.Canvas(bitmap));
+        try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getFilesDir(),"qa-app-icon.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}
+        bitmap.recycle();assertions+=2;
+    }
     private void checkTextLayout(View view){
+        if(view.getVisibility()!=View.VISIBLE)return;
         if(view instanceof TextView){
             TextView text=(TextView)view;
             if(text.getLayout()!=null){
@@ -314,6 +338,11 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
             assertions++;
         }
         if(view instanceof ViewGroup){ViewGroup parent=(ViewGroup)view;for(int i=0;i<parent.getChildCount();i++)checkTextLayout(parent.getChildAt(i));}
+    }
+    private void auditCurrentLayout(){
+        Throwable[] failure={null};
+        runOnMainSync(()->{try{checkTextLayout(activity.getWindow().getDecorView());}catch(Throwable error){failure[0]=error;}});
+        if(failure[0]!=null)throw new AssertionError("Layout audit failed",failure[0]);
     }
     private String shell(String command)throws Exception{
         try(FileInputStream in=new ParcelFileDescriptor.AutoCloseInputStream(getUiAutomation().executeShellCommand(command))){

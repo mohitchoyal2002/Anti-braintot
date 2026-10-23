@@ -19,7 +19,10 @@ public final class MainActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor();
     private final Map<String,AppRow> rows=new LinkedHashMap<>();
-    private LinearLayout page,content,appList,navigation;
+    private LinearLayout page,content,appList;
+    private View navigation;
+    private FrostedBar materialBar;
+    private Dialog dayDialog;
     private ScrollView scroll;
     private PermissionState permissions;
     private boolean setupVisible, dismissedSetupThisVisit, externalSettings;
@@ -73,17 +76,21 @@ public final class MainActivity extends Activity {
         TextView logo=Ui.text(this,"TimeLens",20,Ui.INK,true);logo.setPadding(dp(10),0,0,0);brand.addView(logo,new LinearLayout.LayoutParams(0,-2,1));
         root.addView(brand);
         scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
-        page=Ui.column(this);page.setPadding(dp(24),dp(10),dp(24),dp(24));scroll.addView(page);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout nav=Ui.row(this);navigation=nav;nav.setPadding(dp(16),dp(8),dp(16),dp(12));nav.setBackgroundColor(Ui.BG);
+        page=Ui.column(this);page.setPadding(dp(24),dp(10),dp(24),dp(24));scroll.addView(page);FrameLayout region=new FrameLayout(this);region.addView(scroll,new FrameLayout.LayoutParams(-1,-1));root.addView(region,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout nav=Ui.row(this);nav.setPadding(dp(8),dp(4),dp(8),dp(4));
         String[] labels={"Today","History","Settings"};
         int[] symbols={R.drawable.ic_today,R.drawable.ic_history,R.drawable.ic_settings};
         for(int i=0;i<labels.length;i++) {
             final int index=i;LinearLayout surface=Ui.column(this);surface.setGravity(Gravity.CENTER);surface.setPadding(dp(8),dp(10),dp(8),dp(10));surface.setMinimumHeight(dp(60));
             ImageView symbol=new ImageView(this);symbol.setImageResource(symbols[i]);surface.addView(symbol,new LinearLayout.LayoutParams(dp(22),dp(22)));Ui.gap(surface,6);
-            TextView t=Ui.text(this,labels[i],12,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);t.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);surface.setFocusable(true);surface.setOnClickListener(v->{showTab(index);scroll.smoothScrollTo(0,0);});
+            TextView t=Ui.text(this,labels[i],12,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);t.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);surface.setFocusable(true);surface.setOnClickListener(v->{if(tab!=index){showTab(index);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);Ui.enter(page);}if(Ui.animationsEnabled())scroll.smoothScrollTo(0,0);else scroll.scrollTo(0,0);});
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(dp(3),0,dp(3),0);nav.addView(surface,cell);tabs.add(t);tabIcons.add(symbol);tabSurfaces.add(surface);
         }
-        root.addView(nav);FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Ui.BG);
+        materialBar=new FrostedBar(this,scroll,nav);navigation=materialBar;
+        FrameLayout.LayoutParams barSize=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);barSize.setMargins(dp(12),0,dp(12),dp(12));region.addView(materialBar,barSize);
+        materialBar.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{int bottom=materialBar.getVisibility()==View.VISIBLE?materialBar.getHeight()+dp(44):dp(24);if(page.getPaddingBottom()!=bottom)page.setPadding(dp(24),dp(10),dp(24),bottom);});
+        scroll.getViewTreeObserver().addOnScrollChangedListener(()->materialBar.refresh());
+        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Ui.BG);
         frame.addView(root,new FrameLayout.LayoutParams(-1,-1,Gravity.TOP|Gravity.CENTER_HORIZONTAL));setContentView(frame);root.requestApplyInsets();
         if(Build.VERSION.SDK_INT>=30){
             WindowInsetsController controller=getWindow().getInsetsController();
@@ -137,6 +144,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if(Build.VERSION.SDK_INT>=33&&backRegistered)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        if(dayDialog!=null)dayDialog.dismiss();
         visible=false;main.removeCallbacksAndMessages(null);unregisterReceiver(timerState);worker.shutdown();super.onDestroy();
     }
     @Override public void onSaveInstanceState(Bundle out){
@@ -169,7 +177,7 @@ public final class MainActivity extends Activity {
         showTab(tab);scroll.smoothScrollTo(0,0);
     }
     private void renderSetup(){
-        clearPage();navigation.setVisibility(View.GONE);
+        clearPage();navigation.setVisibility(View.GONE);page.setPadding(dp(24),dp(10),dp(24),dp(24));
         updateBackCallback();
         PermissionSetup.build(this,page,permissions,showRecovery,notificationsSkipped,permissionFeedback,new PermissionSetup.Actions(){
             public void usage(){usageSettings();}
@@ -189,7 +197,7 @@ public final class MainActivity extends Activity {
             boolean selected=i==tab;
             tabs.get(i).setTextColor(selected?Ui.ACCENT:Ui.MUTED);
             tabIcons.get(i).setImageTintList(android.content.res.ColorStateList.valueOf(selected?Ui.ACCENT:Ui.MUTED));
-            tabSurfaces.get(i).setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Ui.RIPPLE),Ui.rounded(selected?Ui.TINT:Ui.BG,20,this),null));
+            tabSurfaces.get(i).setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Ui.RIPPLE),Ui.rounded(selected?Ui.TINT:0x00000000,28,this),null));
             tabSurfaces.get(i).setSelected(selected);
         }
         if(index==0)buildToday();else if(index==1)buildHistory();else buildSettings();
@@ -203,7 +211,7 @@ public final class MainActivity extends Activity {
         backRegistered=intercept;
     }
     private void heading(String eyebrow,String title,String subtitle) {
-        if(!eyebrow.isEmpty()){page.addView(Ui.text(this,eyebrow,12,Ui.MUTED,true));Ui.gap(page,8);}page.addView(Ui.text(this,title,32,Ui.INK,true));Ui.gap(page,8);
+        if(!eyebrow.isEmpty()){page.addView(Ui.text(this,eyebrow,12,Ui.MUTED,true));Ui.gap(page,8);}page.addView(Ui.text(this,title,34,Ui.INK,true));Ui.gap(page,8);
         TextView sub=Ui.text(this,subtitle,14,Ui.MUTED,false);sub.setLineSpacing(dp(3),1);page.addView(sub);Ui.gap(page,24);
     }
     private void buildToday() {
@@ -213,9 +221,9 @@ public final class MainActivity extends Activity {
         ImageView icon=new ImageView(this);icon.setImageResource(R.drawable.ic_today);
         icon.setImageTintList(android.content.res.ColorStateList.valueOf(Ui.MUTED));
         caption.addView(icon,new LinearLayout.LayoutParams(dp(18),dp(18)));
-        TextView label=Ui.text(this,"Screen time",15,Ui.MUTED,false);label.setPadding(dp(8),0,0,0);caption.addView(label);hero.addView(caption);
+        TextView label=Ui.text(this,"Screen time",17,Ui.MUTED,false);label.setPadding(dp(8),0,0,0);caption.addView(label);hero.addView(caption);
         Ui.gap(hero,16);
-        todayTotal=Ui.text(this,"—",46,Ui.INK,true);hero.addView(todayTotal);
+        todayTotal=Ui.text(this,"—",48,Ui.INK,true);hero.addView(todayTotal);
         Ui.gap(hero,18);
         ring=new ReferenceTrack(this);hero.addView(ring,new LinearLayout.LayoutParams(-1,dp(12)));
         Ui.gap(hero,12);
@@ -226,7 +234,7 @@ public final class MainActivity extends Activity {
         buildAccessCard(page);Ui.gap(page,28);
         page.addView(Ui.text(this,"App activity",22,Ui.INK,true));Ui.gap(page,6);
         page.addView(Ui.text(this,"Time spent in each app today",14,Ui.MUTED,false));Ui.gap(page,16);
-        appList=Ui.column(this);page.addView(appList);empty=Ui.text(this,"Allow usage access to see your app activity.",15,Ui.MUTED,false);appList.addView(empty);
+        appList=Ui.column(this);page.addView(appList);empty=Ui.text(this,"Allow usage access to see your app activity.",17,Ui.MUTED,false);appList.addView(empty);
         Ui.gap(page,20);page.addView(Ui.text(this,"Includes active app use. Screen-off time, the lock screen and the home screen are excluded.",13,Ui.MUTED,false));
         if(snapshot!=null)updateToday();
     }
@@ -235,7 +243,7 @@ public final class MainActivity extends Activity {
         LinearLayout card=Ui.card(this);
         card.addView(Ui.text(this,state.canTrack()?"Floating timer":"Finish setting up",18,Ui.INK,true));
         Ui.gap(card,8);
-        card.addView(Ui.text(this,state.canTrack()?"A small clock and today’s total. Tap it for your current app’s time.":"Allow Usage access for your app breakdown and Display over apps for the floating timer.",15,Ui.MUTED,false));
+        card.addView(Ui.text(this,state.canTrack()?"A small clock and today’s total. Tap it for your current app’s time.":"Allow Usage access for your app breakdown and Display over apps for the floating timer.",17,Ui.MUTED,false));
         Ui.gap(card,16);
         if(!state.canTrack()){
             card.addView(Ui.button(this,"Continue permission setup",true,this::openSetup));
@@ -270,8 +278,9 @@ public final class MainActivity extends Activity {
             if(entries.isEmpty()){empty=Ui.text(this,snapshot.permission?"No recorded app usage yet. Use an app, then return here.":"Grant Usage Access to see your app breakdown.",14,Ui.MUTED,false);appList.addView(empty);}
             for(Map.Entry<String,Long> e:entries){AppRow r=new AppRow(e.getKey());rows.put(e.getKey(),r);appList.addView(r.view);Ui.gap(appList,10);}
         } else if(entries.isEmpty())empty.setText(snapshot.permission?"No recorded app usage yet. Use an app, then return here.":"Grant Usage Access to see your app breakdown.");
-        for(Map.Entry<String,Long> e:entries){AppRow r=rows.get(e.getKey());r.duration.setText(Ui.duration(e.getValue()));r.progress.setProgress(snapshot.usage.total==0?0:(int)(e.getValue()*1000/snapshot.usage.total),android.animation.ValueAnimator.areAnimatorsEnabled());}
+        for(Map.Entry<String,Long> e:entries){AppRow r=rows.get(e.getKey());r.duration.setText(Ui.duration(e.getValue()));r.progress.setProgress(snapshot.usage.total==0?0:(int)(e.getValue()*1000/snapshot.usage.total),Ui.animationsEnabled());}
         if(toggle!=null){toggle.setText(OverlayService.running?"Stop floating timer":"Start floating timer");}
+        if(materialBar!=null)materialBar.refresh();
     }
     private final class AppRow {
         final LinearLayout view;final TextView duration;final ProgressBar progress;
@@ -305,8 +314,8 @@ public final class MainActivity extends Activity {
                     bar.setProgress((int)(ms*1000/Math.max(1,max)));bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
                     bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.LINE));c.addView(bar,new LinearLayout.LayoutParams(-1,dp(4)));
                     Ui.gap(c,12);c.addView(Ui.text(this,"View app activity →",13,Ui.ACCENT,true));
-                    c.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Ui.RIPPLE),Ui.rounded(Ui.CARD,24,this),null));
-                    c.setOnClickListener(v->showDay(date));c.setFocusable(true);c.setMinimumHeight(dp(64));
+                    c.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Ui.RIPPLE),Ui.rounded(Ui.CARD,18,this),null));
+                    c.setOnClickListener(v->{Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);showDay(date);});c.setFocusable(true);c.setMinimumHeight(dp(64));
                     c.setContentDescription(day+", "+Ui.duration(ms)+". View app activity.");
                 }
                 content.addView(c);Ui.gap(content,12);
@@ -316,9 +325,9 @@ public final class MainActivity extends Activity {
     }
     private void showDay(LocalDate date) {
         worker.execute(()->{Map<String,Long> data=repository.appsFor(date);main.post(()->{
-            if(!visible||isDestroyed())return;
-            Dialog dialog=new Dialog(this);
-            LinearLayout body=Ui.card(this);
+            if(!visible||isDestroyed()||(dayDialog!=null&&dayDialog.isShowing()))return;
+            Dialog dialog=new Dialog(this,R.style.FloatingMaterialTheme);dayDialog=dialog;dialog.setOnDismissListener(d->dayDialog=null);
+            LinearLayout body=Ui.card(this);body.setBackgroundColor(Color.TRANSPARENT);
             body.addView(Ui.text(this,date.format(DateTimeFormatter.ofPattern("d MMMM yyyy",Locale.ENGLISH)),22,Ui.INK,true));Ui.gap(body,16);
             ScrollView detailScroll=new ScrollView(this);detailScroll.setVerticalScrollBarEnabled(false);
             LinearLayout apps=Ui.column(this);
@@ -326,16 +335,16 @@ public final class MainActivity extends Activity {
             for(Map.Entry<String,Long> e:entries){
                 LinearLayout row=Ui.column(this);row.setPadding(0,dp(14),0,dp(14));
                 row.addView(Ui.text(this,Ui.appName(this,e.getKey()),16,Ui.INK,true));Ui.gap(row,5);
-                row.addView(Ui.text(this,Ui.duration(e.getValue())+" in this app",15,Ui.MUTED,false));
+                row.addView(Ui.text(this,Ui.duration(e.getValue())+" in this app",17,Ui.MUTED,false));
                 apps.addView(row);Ui.divider(apps);
             }
-            if(data.isEmpty())apps.addView(Ui.text(this,"No app activity saved for this day.",16,Ui.MUTED,false));
+            if(data.isEmpty())apps.addView(Ui.text(this,"No app activity saved for this day.",17,Ui.MUTED,false));
             detailScroll.addView(apps);body.addView(detailScroll,new LinearLayout.LayoutParams(-1,0,1));
             Ui.gap(body,16);body.addView(Ui.button(this,"Done",false,dialog::dismiss));
-            dialog.setContentView(body);dialog.show();
+            dialog.setContentView(body);new WindowMaterial(this,dialog.getWindow(),true);dialog.show();
             if(dialog.getWindow()!=null){
                 Rect bounds=Build.VERSION.SDK_INT>=30?getWindowManager().getCurrentWindowMetrics().getBounds():new Rect(0,0,getResources().getDisplayMetrics().widthPixels,getResources().getDisplayMetrics().heightPixels);
-                dialog.getWindow().setBackgroundDrawable(Ui.rounded(Ui.CARD,24,this));dialog.getWindow().setGravity(Gravity.BOTTOM);
+                dialog.getWindow().setGravity(Gravity.BOTTOM);
                 dialog.getWindow().setLayout(Math.min(bounds.width()-dp(24),dp(560)),(int)(bounds.height()*0.72));
             }
         });});
@@ -344,7 +353,7 @@ public final class MainActivity extends Activity {
         heading("", "Settings", "A little awareness, your way.");
         LinearLayout appearance=Ui.card(this);
         appearance.addView(Ui.text(this,"Floating timer",20,Ui.INK,true));Ui.gap(appearance,8);
-        appearance.addView(Ui.text(this,"Quiet by default. More detail with a tap.",15,Ui.MUTED,false));Ui.gap(appearance,24);
+        appearance.addView(Ui.text(this,"Quiet by default. More detail with a tap.",17,Ui.MUTED,false));Ui.gap(appearance,24);
         TimerCapsule preview=new TimerCapsule(this);
         boolean expanded=!Ui.prefs(this).getBoolean("compact",true);
         preview.setExpanded(expanded);
@@ -360,23 +369,31 @@ public final class MainActivity extends Activity {
             Ui.prefs(this).edit().putBoolean("compact",!checked).apply();preview.setExpanded(checked);
             previewSize.width=TimerCapsule.width(this,checked,available);preview.setLayoutParams(previewSize);
         });
-        preview.setOnClickListener(v->details.setChecked(!details.isChecked()));
+        preview.setOnClickListener(v->details.performClick());
         Ui.gap(appearance,8);
         appearance.addView(Ui.text(this,"Tap the timer to expand or collapse. Drag it to an edge. Stop it from Today or the notification.",14,Ui.MUTED,false));Ui.gap(appearance,16);
         appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));
         page.addView(appearance);Ui.gap(page,16);
         LinearLayout goal=Ui.card(this);goal.addView(Ui.text(this,"Daily reference",20,Ui.INK,true));Ui.gap(goal,8);
-        goal.addView(Ui.text(this,"A personal reference for your day. It never blocks apps.",15,Ui.MUTED,false));Ui.gap(goal,16);
+        goal.addView(Ui.text(this,"A personal reference for your day. It never blocks apps.",17,Ui.MUTED,false));Ui.gap(goal,16);
         int minutes=Ui.prefs(this).getInt("goal",180);
         TextView goalText=Ui.text(this,Ui.duration(minutes*60000L)+" per day",26,Ui.INK,true);goal.addView(goalText);Ui.gap(goal,10);
         SeekBar seek=new SeekBar(this);seek.setMax(46);seek.setProgress((minutes-30)/15);seek.setMinimumHeight(dp(48));
         seek.setContentDescription("Daily screen-time reference in fifteen-minute steps");seek.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));goal.addView(seek);
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){int m=30+value*15;goalText.setText(Ui.duration(m*60000L)+" per day");if(user)Ui.prefs(MainActivity.this).edit().putInt("goal",m).apply();}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}});
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar bar,int value,boolean user){int m=30+value*15;goalText.setText(Ui.duration(m*60000L)+" per day");if(user){Ui.prefs(MainActivity.this).edit().putInt("goal",m).apply();Ui.haptic(bar,HapticFeedbackConstants.CLOCK_TICK);}}public void onStartTrackingTouch(SeekBar bar){}public void onStopTrackingTouch(SeekBar bar){}});
         page.addView(goal);Ui.gap(page,16);
+        LinearLayout feel=Ui.card(this);feel.addView(Ui.text(this,"Appearance & feedback",20,Ui.INK,true));Ui.gap(feel,12);
+        Switch transparency=Ui.settingToggle(this,feel,"Reduce transparency",Ui.prefs(this).getBoolean("reduce_transparency",false));
+        transparency.setOnCheckedChangeListener((button,checked)->{Ui.prefs(this).edit().putBoolean("reduce_transparency",checked).apply();materialBar.refresh();});
+        Switch motion=Ui.settingToggle(this,feel,"Animations",Ui.prefs(this).getBoolean("motion",true));
+        motion.setOnCheckedChangeListener((button,checked)->{Ui.prefs(this).edit().putBoolean("motion",checked).apply();Ui.motion=checked;});
+        Switch haptics=Ui.settingToggle(this,feel,"Haptic feedback",Ui.prefs(this).getBoolean("haptics",true));
+        haptics.setOnCheckedChangeListener((button,checked)->Ui.prefs(this).edit().putBoolean("haptics",checked).apply());
+        Ui.gap(feel,8);feel.addView(Ui.text(this,"Frosted controls become solid when needed for readability or battery saving.",14,Ui.MUTED,false));page.addView(feel);Ui.gap(page,16);
         PermissionState state=PermissionState.read(this);
         LinearLayout access=Ui.card(this);
         access.addView(Ui.text(this,"Permissions & battery",18,Ui.INK,true));Ui.gap(access,14);
-        access.addView(Ui.text(this,"Usage access: "+(state.usage?"Allowed":"Not allowed")+"\nDisplay over apps: "+(state.overlay?"Allowed":"Not allowed")+"\nNotifications: "+(state.notifications?"Allowed":"Off · optional"),15,Ui.MUTED,false));
+        access.addView(Ui.text(this,"Usage access: "+(state.usage?"Allowed":"Not allowed")+"\nDisplay over apps: "+(state.overlay?"Allowed":"Not allowed")+"\nNotifications: "+(state.notifications?"Allowed":"Off · optional"),17,Ui.MUTED,false));
         Ui.gap(access,16);access.addView(Ui.button(this,"Review permission setup",!state.complete(),this::openSetup));Ui.gap(access,10);
         access.addView(Ui.button(this,"Open app & battery settings",false,this::appInfoSettings));Ui.gap(access,10);
         LinearLayout shortcuts=Ui.column(this);
@@ -385,7 +402,7 @@ public final class MainActivity extends Activity {
         shortcuts.addView(Ui.button(this,"Notification settings",false,this::notificationSettings));
         shortcuts.setVisibility(View.GONE);
         TextView disclosure=Ui.button(this,"Show Android settings",false,()->{});
-        disclosure.setOnClickListener(v->{boolean open=shortcuts.getVisibility()==View.VISIBLE;shortcuts.setVisibility(open?View.GONE:View.VISIBLE);disclosure.setText(open?"Show Android settings":"Hide Android settings");});
+        disclosure.setOnClickListener(v->{Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);boolean open=shortcuts.getVisibility()==View.VISIBLE;shortcuts.setVisibility(open?View.GONE:View.VISIBLE);disclosure.setText(open?"Show Android settings":"Hide Android settings");});
         access.addView(disclosure);Ui.gap(access,10);access.addView(shortcuts);
         Ui.gap(access,14);access.addView(Ui.text(this,"If Samsung pauses the timer, set TimeLens battery use to Unrestricted and remove it from Sleeping apps. After a restart, open TimeLens and start the timer again.",13,Ui.MUTED,false));page.addView(access);Ui.gap(page,16);
         LinearLayout about=Ui.card(this);about.addView(Ui.text(this,"Designed around your privacy",18,Ui.INK,true));Ui.gap(about,10);about.addView(Ui.text(this,"TimeLens reads app names and activity timestamps through Android Usage Access. It cannot read chats, capture the screen, count reels or track audio playing with the screen off. There is no Internet permission. Some apps, including banking and permission screens, can hide overlays. Split screen uses the latest resumed app as an approximation.",13,Ui.MUTED,false));Ui.gap(about,14);about.addView(Ui.text(this,"TimeLens "+versionName()+" · Personal test build",11,Ui.ACCENT,true));page.addView(about);

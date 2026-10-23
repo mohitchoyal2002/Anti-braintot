@@ -1,51 +1,56 @@
-# TimeLens design system · 0.3.0
+# TimeLens · Apple-reference design system
 
-Applies the [Apple Design skill](https://github.com/dickwu/apple-design-skill/blob/main/SKILL.md) linked in the user's [setup and audit guide](https://agiwithaditya.notion.site/Apple-Design-Skill-Simple-Setup-Website-Audit-Guide-Claude-Code-Codex-400d171fd705817aa761d7d306b3a8f8). This is native Android: use the foundations and craft guidance with Android controls, fonts, permission screens, TalkBack and 48dp touch targets. See [APP_DESIGN_AUDIT.md](APP_DESIGN_AUDIT.md).
+Sources: [VoltAgent Apple DESIGN.md](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/apple/DESIGN.md) for visual tokens; [Apple Design skill](https://github.com/dickwu/apple-design-skill/blob/main/SKILL.md) from the user's guide for the audit. This is an Android utility, so platform Back, permissions, touch targets and accessibility remain Android-native.
 
 ## Thesis
 
-Make actual time easy to glance at, then let people choose the detail. The signature is a small clock capsule: one icon and the total, with app detail a tap away. Settings reuses the same component and actual available data. Neutral surfaces and a restrained blue accent leave measured time in charge. The segmented track represents the user's adjustable daily reference; it is not a 24-hour clock or an app blocker.
+Make real time feel quiet and tangible. The signature is a small frosted clock capsule, with current-app detail one tap away. The same object appears in Settings. Time is the content; glass, motion and haptics explain the controls around it.
 
-## Semantic tokens
+## Palette
 
-Ratios use sRGB luminance calculated from resource values. Day/night colors follow the phone.
+The reference's Action Blue, parchment and near-black ink replace the earlier indigo palette. Secondary colors are adapted for legibility, and dark counterparts are supplied where the web reference has gaps. Ratios are calculated from the resource values.
 
-| Role | Light | Dark | Contrast, light / dark |
+| Role | Light | Dark | Contrast on card, light / dark |
 | --- | --- | --- | --- |
-| Surface | `#F6F7FA` | `#101216` | Background |
-| Card / capsule | `#FFFFFF` | `#1C2028` | Background |
-| Primary content | `#171C26` | `#F1F4FA` | On card: 17.07 / 14.81 |
-| Secondary content | `#5D6676` | `#ADB6C5` | On card: 5.79 / 7.99 |
-| Action / selection | `#3659D9` | `#ABBDFF` | On card: 5.85 / 8.90 |
-| Secondary action surface | `#EBEFFE` | `#272F48` | Primary content: 14.88 / 12.01 |
-| Divider / empty track | `#E1E5ED` | `#343C4B` | Decorative grouping |
+| Canvas | #F5F5F7 | #000000 | Background |
+| Card | #FFFFFF | #1C1C1E | Background |
+| Ink | #1D1D1F | #F5F5F7 | 16.83 / 15.63 |
+| Secondary ink | #626268 | #B9B9BF | 6.06 / 8.71 |
+| Links / selection | #0066CC | #2997FF | 5.57 / 5.64 |
+| Primary action | #0066CC | #0066CC | White label: 5.57 / 5.57 |
+| Secondary surface | #EBF3FC | #14283E | Blue label: 4.97 / 4.96 |
+| Hairline | #E0E0E0 | #38383C | Decorative grouping |
 
-Primary button labels use surface on accent: 5.46 / 10.23. Secondary copy on tint: 5.05 / 6.48. All listed text pairs exceed 4.5:1. The capsule is opaque so its contrast stays stable over photos and video, with a 1dp boundary and 4dp elevation.
+Cards and list content are opaque. Functional layers use regular, restrained frosting. The navigation fill uses alpha 240/255, and native floating windows use 235/255. At the worst neutral backdrop, nav text is at least 5.32 light / 7.44 dark; floating secondary text is 5.08 light / 6.94 dark. Blue on the floating dark material is used for a clock icon (4.49:1, above the 3:1 non-text threshold), not small blue text.
 
-## Type and layout
+## Typography and geometry
 
-Android system sans, regular and medium weights, with tabular numbers. Scale: total 46sp; title 32sp; section 20–22sp; body/actions 15–16sp; support 13–14sp; tabs 12sp. No canvas-rendered text. Native text scales with the system.
+Licensed Inter 4.1, with a renamed Latin subset and Android script fallback, substitutes for the reference's proprietary SF Pro. Body is regular; headings are weight 600. Display tracking is slightly negative and the optical-size axis uses 32 for display text. No Apple font is bundled. See THIRD_PARTY_NOTICES.md and the bundled OFL.
 
-| Surface | Compact layout | Wider / larger text |
-| --- | --- | --- |
-| App shell | Scrollable column, 24dp page and 20dp card insets | Centered within 720dp; same functions |
-| Today | Total, reference, current app, timer action, ranked apps | App durations move below names above 1.2 font scale |
-| History | Seven day cards with explicit detail affordance | Date and duration stack above 1.2 font scale |
-| Day detail | Scrollable app list, title and Done outside scroll | Maximum 560dp width, bounded to current window |
-| Capsule | Clock + total; 132dp width, minimum 48dp height | Grows with font scale and clamps to window bounds |
-| Expanded capsule | Today total + app name/time; 224dp width | Wrapping app text and scalable height |
-| Settings | Interactive capsule, reference, access, privacy | Android shortcuts progressively disclosed |
+Scale: total 48sp; title 34sp; section 20–22sp; reading/action 17sp; support/data 13–16sp; tabs 12sp. Native text respects font scale; no text is canvas-painted. Large app names wrap, and app/history durations move below names above 1.2 font scale.
 
-Buttons have 52dp minimum height. Switches and navigation meet Android's 48dp target. Simple original vector icons share rounded strokes. The clock denotes time and the four-app grid introduces app detail. No Apple fonts or SF Symbols are bundled.
+Utility cards use 18dp radii, 20dp padding and no shadow. Main actions are full pills with at least 52dp height. Page inset is 24dp. Wider windows center the same hierarchy within 720dp. The detail dialog is bounded to the current window and 560dp width, with a persistent Done control.
 
-## Flow and motion
+The compact capsule is 132dp wide at normal font size and at least 48dp high. Expanded detail is 224dp wide. Both grow with the person's font setting and clamp to current window bounds.
 
-Read actual permission grants on opening and returning. Usage and overlay access are required for the timer; notifications are optional. Settings open on a tap. Recovery remains conditional. Not now, Back and optional notification continuation stay available; missing access returns on a later visit as requested.
+## Materials
 
-History uses disclosure text and ripple. Unavailable days remain distinct from zero. The daily detail's Done button stays outside its scrolling content. Capsule and preview expose meaningful descriptions and Show/Hide app detail accessibility actions. Reset timer position is a button alternative to dragging.
+- Navigation: a small, half-resolution sample of TimeLens's own scrolling content, blurred behind sharp controls using Android RenderEffect. No other app is sampled.
+- Timer: an Android floating overlay dialog using Window.setBackgroundBlurRadius, clipped to its rounded background. It does not blur or dim the rest of the app underneath.
+- Daily detail: a native floating material; modest blur behind and dim focus attention on the open detail. It is dismissed before opening another detail.
+- Reduce transparency, high system contrast and battery saving use solid fills. Native blur capability changes also switch the window material to an opaque fallback. Unsupported capture/render paths fall back safely.
+- Content cards, app rows and the main canvas remain opaque. Blur is never applied to labels.
 
-Press and reference changes use interruptible springs and honor disabled Android animators. The timer follows the finger and docks at an edge. Frequent time updates do not pulse, bounce or move the window. No animated blur or promotional video is needed. See [MOTION.md](MOTION.md).
+## Motion and haptics
 
-## Validation boundary
+Navigation enters with a 180ms fade and 6dp travel. The daily sheet uses a short enter/exit transition. Buttons have immediate ripple and an interruptible press spring; expansion fades the extra detail. Drag follows the finger, then docks using independent interruptible springs. Timer digits never pulse or bounce.
 
-The APK workflow runs native checks on Android 15, 16 and 17 and captures setup, recovery, Today, History, daily detail, Settings, and the actual compact/expanded/docked capsule. Covered appearances are normal light and dark 200% text. Check the result for the matching commit; a pending run is not a pass. Physical Samsung settings, TalkBack traversal, outdoor viewing and gesture feel still require device review.
+Settings exposes Animations and Haptic feedback. Android's disabled-animator and haptic settings are honored. Short selection ticks accompany taps, toggle changes, reference steps and drag release; nothing vibrates continuously. See MOTION.md.
+
+## Icon
+
+An original blue clock/lens mark sits on a ceramic canvas. The foreground stays in the adaptive safe zone. Android adaptive and monochrome versions support launcher masks and themed icons; the legacy vector uses the same mark. All interface icons remain original, simple vectors with labels or accessible descriptions.
+
+## Audit and evidence
+
+See APP_DESIGN_AUDIT.md. The APK workflow exercises permission flows and complete design journeys on Android 15, 16 and 17, in light and dark 200% text. It captures real app screens, daily detail, Settings, the capsule and the packaged adaptive icon. Preferences and themed-icon presence are checked. A pending run is not a pass; physical Samsung blur/haptic feel and TalkBack traversal still require device review.

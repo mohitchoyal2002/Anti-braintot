@@ -17,7 +17,7 @@ final class TimerCapsule extends LinearLayout {
     private final TextView total, today, appName, appDuration;
     private final LinearLayout detail;
     private final GradientDrawable surface;
-    private boolean expanded;
+    private boolean expanded,windowHosted;
     private String spokenTime="Starting timer";
 
     TimerCapsule(Context c) {
@@ -28,7 +28,7 @@ final class TimerCapsule extends LinearLayout {
         surface=Ui.rounded(Ui.CARD,24,c);
         setBackground(new android.graphics.drawable.RippleDrawable(
                 ColorStateList.valueOf(Ui.RIPPLE),surface,Ui.rounded(0xffffffff,24,c)));
-        setElevation(Ui.dp(c,4));
+        setElevation(0);
         LinearLayout summary=Ui.row(c);
         clock=new ImageView(c);
         clock.setImageResource(R.drawable.ic_timer);
@@ -70,9 +70,11 @@ final class TimerCapsule extends LinearLayout {
     }
 
     void setExpanded(boolean value) {
+        boolean revealing=value&&!expanded;
         expanded=value;
         today.setVisibility(value?VISIBLE:GONE);
         detail.setVisibility(value?VISIBLE:GONE);
+        if(revealing)Ui.enter(detail);
         LayoutParams totalSize=(LayoutParams)total.getLayoutParams();
         totalSize.leftMargin=Ui.dp(getContext(),value?0:8);
         totalSize.width=value?LayoutParams.WRAP_CONTENT:0;
@@ -95,11 +97,12 @@ final class TimerCapsule extends LinearLayout {
     }
     void applyAppearance(){
         // Opaque content keeps contrast stable over any app, including photos and video.
-        surface.setColor(Ui.CARD);surface.setStroke(Ui.dp(getContext(),1),Ui.LINE);
+        surface.setColor(windowHosted?android.graphics.Color.TRANSPARENT:Ui.CARD);surface.setStroke(Ui.dp(getContext(),1),Ui.LINE);
         clock.setImageTintList(ColorStateList.valueOf(Ui.ACCENT));
         total.setTextColor(Ui.INK);today.setTextColor(Ui.MUTED);
         appName.setTextColor(Ui.INK);appDuration.setTextColor(Ui.MUTED);
     }
+    void useWindowMaterial(){windowHosted=true;applyAppearance();}
     static int width(Context c,boolean expanded,int available) {
         float scale=Math.max(1,c.getResources().getConfiguration().fontScale);
         return Math.max(Ui.dp(c,48),Math.min(available,Ui.dp(c,(expanded?224:132)*scale)));

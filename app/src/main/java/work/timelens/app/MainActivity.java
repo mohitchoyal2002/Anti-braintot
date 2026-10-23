@@ -125,16 +125,14 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() {
         visible=false;
-        if(refreshJob!=null)refreshJob.cancel(false);
-        worker.execute(repository::flush);
-        super.onPause();
-    }
-    @Override protected void onStop() {
+        // A quick app switch can resume without onStop on newer Android releases.
         if(!externalSettings&&!notificationRequestInFlight&&!isChangingConfigurations()){
             dismissedSetupThisVisit=false;
             notificationsSkipped=false;
         }
-        super.onStop();
+        if(refreshJob!=null)refreshJob.cancel(false);
+        worker.execute(repository::flush);
+        super.onPause();
     }
     @Override protected void onDestroy() {
         if(Build.VERSION.SDK_INT>=33&&backRegistered)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);

@@ -24,6 +24,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     private Bundle arguments;
     private Activity activity;
     private int assertions;
+    private final StringBuilder shellTrace=new StringBuilder();
 
     @Override public void onCreate(Bundle args) { arguments=args;start(); }
 
@@ -121,8 +122,9 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
             result.putString("stream","PASS "+scenario+": "+assertions+" assertions\n");
             finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
+            try{capture("failure");}catch(Exception ignored){}
             result.putString("timelens_success","false");
-            result.putString("stream","FAIL "+scenario+": "+error+"\n"+android.util.Log.getStackTraceString(error));
+            result.putString("stream","FAIL "+scenario+": "+error+"\n"+android.util.Log.getStackTraceString(error)+"\n"+shellTrace);
             finish(Activity.RESULT_CANCELED,result);
         }
     }
@@ -203,7 +205,9 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     }
     private String shell(String command)throws Exception{
         try(FileInputStream in=new ParcelFileDescriptor.AutoCloseInputStream(getUiAutomation().executeShellCommand(command))){
-            return new String(in.readAllBytes(),StandardCharsets.UTF_8);
+            String output=new String(in.readAllBytes(),StandardCharsets.UTF_8);
+            shellTrace.append(command).append('\n').append(output).append('\n');
+            return output;
         }
     }
     private void capture(String name)throws Exception{

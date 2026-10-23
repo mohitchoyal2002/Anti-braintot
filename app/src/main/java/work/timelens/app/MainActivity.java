@@ -195,7 +195,10 @@ public final class MainActivity extends Activity {
         if(manual){
             permissionFeedback=actual.requiredStatus()+(!actual.notifications?" Timer notifications are off · optional.":"");
         }
-        if(changed||manual)renderCurrent();
+        if(changed||manual){
+            renderCurrent();
+            if(setupVisible)scroll.scrollTo(0,0);
+        }
     }
     private void settingsReturned(PermissionSettings.Target target){
         permissionFeedback=null;
@@ -203,6 +206,7 @@ public final class MainActivity extends Activity {
         if(target!=PermissionSettings.Target.APP_INFO){
             setupVisible=true;dismissedSetupThisVisit=false;
         }
+        if(setupVisible)scroll.scrollTo(0,0);
         switch(target){
             case USAGE:
                 showRecovery=!permissions.usage;

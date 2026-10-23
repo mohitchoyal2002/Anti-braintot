@@ -95,9 +95,9 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         visible=true;
-        PermissionState actual=PermissionState.read(this);
-        if(!actual.sameAs(permissions))permissionFeedback=null;
-        permissions=actual;
+        PermissionState resumedState=PermissionState.read(this);
+        if(!resumedState.sameAs(permissions))permissionFeedback=null;
+        permissions=resumedState;
         if(usageSettingsPending){
             showRecovery=!permissions.usage;
             permissionFeedback=permissions.usage?null:"Usage access is still off.";

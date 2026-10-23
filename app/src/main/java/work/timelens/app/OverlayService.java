@@ -74,7 +74,9 @@ public final class OverlayService extends Service {
         snapshot=repository.refresh(); main.post(this::render);
     }
     private void createPill() {
-        Context visual=Build.VERSION.SDK_INT>=30?createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null):this;
+        Display display=getSystemService(android.hardware.display.DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+        Context visual=Build.VERSION.SDK_INT>=30?createDisplayContext(display).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,null):this;
+        windows=visual.getSystemService(WindowManager.class);
         floatingWindow=new Dialog(visual,R.style.FloatingMaterialTheme);floatingWindow.setCancelable(false);floatingWindow.setCanceledOnTouchOutside(false);
         pill=new TimerCapsule(floatingWindow.getContext());pill.useWindowMaterial();floatingWindow.setContentView(pill);
         pill.setExpanded(!Ui.prefs(this).getBoolean("compact",true));
@@ -82,7 +84,7 @@ public final class OverlayService extends Service {
         layout.gravity=Gravity.TOP|Gravity.START; layout.x=Ui.prefs(this).getInt("overlay_x",Ui.dp(this,16)); layout.y=Ui.prefs(this).getInt("overlay_y",Ui.dp(this,100));
         floatingWindow.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
         floatingWindow.getWindow().setAttributes(layout);floatingWindow.getWindow().setWindowAnimations(0);
-        material=new WindowMaterial(this,floatingWindow.getWindow(),false);
+        material=new WindowMaterial(visual,floatingWindow.getWindow(),false);
         pill.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(b-t!=ob-ot){clamp();moveWindow();savePosition();}});
         settleX=new SpringValue(layout.x,0.4,v->{layout.x=Math.round(v);moveWindow();},this::savePosition);
         settleY=new SpringValue(layout.y,0.4,v->{layout.y=Math.round(v);moveWindow();},this::savePosition);

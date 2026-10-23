@@ -5,13 +5,33 @@ cd "$(dirname "$0")/.."
 sdk_path="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 adb_path="$sdk_path/platform-tools/adb"
 [[ "$("$adb_path" shell getprop ro.kernel.qemu | tr -d '\r')" == 1 ]] || { printf '%s\n' 'Permission tests require a disposable emulator.' >&2; exit 1; }
-bash scripts/build-permission-tests.sh
-version_name="$(sed -n 's/^versionName=//p' version.properties)"
-"$adb_path" install -r "build/sdk/TimeLens-$version_name-debug.apk"
-"$adb_path" install -r build/permission-tests/permission-tests.apk
 device_api="$("$adb_path" shell getprop ro.build.version.sdk | tr -d '\r')"
 evidence_path="build/permission-evidence/api-$device_api"
 mkdir -p "$evidence_path"
+collect_failure() {
+  local result="$?"
+  if (( result != 0 )); then
+    "$adb_path" logcat -d -t 8000 > "$evidence_path/device-failure-logcat.txt" || true
+    "$adb_path" shell df -h /data > "$evidence_path/device-storage.txt" || true
+    df -h > "$evidence_path/runner-storage.txt" || true
+  fi
+}
+trap collect_failure EXIT
+# boot_completed can precede a fully responsive package manager on a fresh image.
+package_ready=false
+for attempt in {1..30}; do
+  if "$adb_path" shell pm path android 2>/dev/null | grep -q 'package:'; then
+    package_ready=true
+    break
+  fi
+  sleep 2
+done
+[[ "$package_ready" == true ]] || { printf '%s\n' 'Android package manager did not become ready.' >&2; exit 1; }
+bash scripts/build-permission-tests.sh
+version_name="$(sed -n 's/^versionName=//p' version.properties)"
+# A complete streaming install avoids incremental-filesystem startup races.
+"$adb_path" install --no-incremental -r "build/sdk/TimeLens-$version_name-debug.apk"
+"$adb_path" install --no-incremental -r build/permission-tests/permission-tests.apk
 
 run_case() {
   local scenario="$1" usage="$2" overlay="$3" notifications="$4"

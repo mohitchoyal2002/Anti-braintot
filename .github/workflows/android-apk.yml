@@ -50,12 +50,27 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Verify permission setup on Android 17
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          # Google's stable Android 17 SDK/image package is named 37.0.
+          api-level: '37.0'
+          avd-name: timelens-api-37-0
+          disk-size: 6G
+          ram-size: 4096M
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 300
+          script: bash scripts/test-permissions-device.sh
+
       - name: Verify permission setup on Android 15
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 35
           avd-name: timelens-api-35
           disk-size: 6G
+          ram-size: 4096M
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -68,19 +83,7 @@ jobs:
           api-level: 36
           avd-name: timelens-api-36
           disk-size: 6G
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          emulator-boot-timeout: 300
-          script: bash scripts/test-permissions-device.sh
-
-      - name: Verify permission setup on Android 17
-        uses: reactivecircus/android-emulator-runner@v2.38.0
-        with:
-          # Google's stable Android 17 SDK/image package is named 37.0.
-          api-level: '37.0'
-          avd-name: timelens-api-37-0
-          disk-size: 6G
+          ram-size: 4096M
           target: google_apis
           arch: x86_64
           profile: pixel_6

@@ -43,7 +43,12 @@ final class UsageRepository {
     boolean hasUsageAccess() {
         AppOpsManager ops=context.getSystemService(AppOpsManager.class);
         try {
-            return ops!=null && ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),context.getPackageName())==AppOpsManager.MODE_ALLOWED;
+            if(ops==null)return false;
+            int mode=ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),context.getPackageName());
+            // MODE_DEFAULT defers to the manifest permission (normally denied for third-party apps).
+            // An empty UsageEvents result is valid on a fresh install; it is not a grant check.
+            return mode==AppOpsManager.MODE_ALLOWED || (mode==AppOpsManager.MODE_DEFAULT
+                    && context.checkSelfPermission(android.Manifest.permission.PACKAGE_USAGE_STATS)==PackageManager.PERMISSION_GRANTED);
         } catch(RuntimeException unavailable) { return false; }
     }
     private long midnight(LocalDate day) { return day.atStartOfDay(zone).toInstant().toEpochMilli(); }

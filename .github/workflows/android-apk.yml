@@ -54,6 +54,7 @@ jobs:
         run: bash scripts/test-counting.sh
 
       - name: Compile, package and verify APK
+        id: build
         run: bash scripts/build-apk.sh
 
       - name: Enable emulator acceleration
@@ -79,6 +80,7 @@ jobs:
           script: bash scripts/test-permissions-device.sh
 
       - name: Verify permission setup on Android 15
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 35
@@ -92,6 +94,7 @@ jobs:
           script: bash scripts/test-permissions-device.sh
 
       - name: Verify permission setup on Android 16
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 36

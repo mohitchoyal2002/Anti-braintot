@@ -6,7 +6,7 @@ import android.app.Instrumentation;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
-import android.content.IntentFilter;
+import android.content.ActivityNotFoundException;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 /** Device-level regression checks; no external test framework or fake grant reader. */
 public final class PermissionFlowInstrumentation extends Instrumentation {
     private Bundle arguments;
-    private Activity activity;
+    private volatile Activity activity;
     private int assertions;
     private final StringBuilder shellTrace=new StringBuilder();
     private volatile boolean activityResumed=true;
@@ -47,7 +47,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
             activity=startActivitySync(new Intent(getTargetContext(),MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
             runOnMainSync(()->activity.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks(){
-                public void onActivityCreated(Activity a,Bundle saved){}
+                public void onActivityCreated(Activity a,Bundle saved){if(a instanceof MainActivity)activity=a;}
                 public void onActivityStarted(Activity a){}
                 public void onActivityResumed(Activity a){if(a==activity)activityResumed=true;}
                 public void onActivityPaused(Activity a){if(a==activity)activityResumed=false;}
@@ -60,16 +60,30 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                 case "usage":
                     expect("Make time visible.");
                     expect("Know where your day goes");
+                    expect("0 of 2 required permissions allowed");
+                    expect("Still needed: Usage access and Display over apps.");
                     assertVisible("Open usage access");
+                    tap("Check permissions again");
+                    expect("Still needed: Usage access and Display over apps.");
+                    if(OverlayService.running)throw new AssertionError("Checking access started the timer");
+                    assertions++;
                     capture("usage");
                     // Exercise an actual settings round trip without granting access.
                     tap("Open usage access");
                     awaitPaused();
+                    // Recreate while Settings is on top: the pending target must survive.
+                    runOnMainSync(()->activity.recreate());
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Is the switch blocked?");
                     expect("Usage access is still off.");
                     expect("Allow restricted settings");
+                    recreateAndAwait("Usage access is still off.");
                     verifyIntent("Open App info",Settings.ACTION_APPLICATION_DETAILS_SETTINGS,true);
+                    tap("Open App info");
+                    awaitPaused();
+                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    await("Back from App info.");
+                    expect("Allowing restricted settings alone does not grant Usage access.");
                     capture("recovery");
                     tap("Not now · view dashboard");
                     expect("Continue permission setup");
@@ -80,11 +94,18 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     shell("appops set work.timelens.app GET_USAGE_STATS allow");
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Keep the total in sight");
+                    expect("Still needed: Display over apps.");
                     break;
                 case "overlay":
                     expect("Keep the total in sight");
-                    expect("1 of 3 permissions allowed");
+                    expect("1 of 2 required permissions allowed");
                     verifyIntent("Open display settings",Settings.ACTION_MANAGE_OVERLAY_PERMISSION,true);
+                    tap("Open display settings");
+                    awaitPaused();
+                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    await("Display over apps is still off.");
+                    recreateAndAwait("Display over apps is still off.");
+                    expect("Still needed: Display over apps.");
                     capture("overlay");
                     shell("input keyevent KEYCODE_BACK");
                     await("Continue permission setup");
@@ -125,8 +146,12 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     break;
                 case "channel":
                     expect("A quick way to stop");
-                    expect("2 of 3 permissions allowed");
-                    verifyIntent("Set up notifications",Settings.ACTION_APP_NOTIFICATION_SETTINGS,false);
+                    expect("2 of 2 required permissions allowed");
+                    verifyIntent("Set up notifications",Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS,false);
+                    break;
+                case "settings":
+                    runOnMainSync(this::verifySettingsFallbacks);
+                    verifyUnavailableSettings();
                     break;
                 case "large":
                     expect("Know where your day goes");
@@ -216,12 +241,78 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         waitForIdleSync();assertions++;
     }
     private void verifyIntent(String text,String action,boolean packageData){
-        IntentFilter filter=new IntentFilter(action);
-        if(packageData)filter.addDataScheme("package");
-        ActivityMonitor monitor=addMonitor(filter,null,true);
+        Intent[] launched={null};
+        ActivityMonitor monitor=new ActivityMonitor(){
+            @Override public ActivityResult onStartActivity(Intent intent){
+                launched[0]=new Intent(intent);
+                return new ActivityResult(Activity.RESULT_CANCELED,null);
+            }
+        };
+        addMonitor(monitor);
         tap(text);
-        if(monitor.getHits()!=1)throw new AssertionError("Wrong settings intent for "+text);
-        assertions++;removeMonitor(monitor);
+        removeMonitor(monitor);
+        if(launched[0]==null||!action.equals(launched[0].getAction()))throw new AssertionError("Wrong settings intent for "+text);
+        if(packageData&&!"package:work.timelens.app".equals(launched[0].getDataString()))throw new AssertionError("Wrong Settings package");
+        if(Settings.ACTION_APP_NOTIFICATION_SETTINGS.equals(action)||Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS.equals(action)){
+            if(!"work.timelens.app".equals(launched[0].getStringExtra(Settings.EXTRA_APP_PACKAGE)))throw new AssertionError("Missing notification package");
+        }
+        if(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS.equals(action)&&!"timer".equals(launched[0].getStringExtra(Settings.EXTRA_CHANNEL_ID)))throw new AssertionError("Wrong notification channel");
+        assertions++;
+    }
+    private void recreateAndAwait(String text){
+        Activity previous=activity;
+        runOnMainSync(previous::recreate);
+        long until=SystemClock.uptimeMillis()+8000;
+        while((activity==previous||!activityResumed)&&SystemClock.uptimeMillis()<until)SystemClock.sleep(50);
+        if(activity==previous)throw new AssertionError("Activity was not recreated");
+        await(text);
+    }
+    private static final class LaunchProbe extends Activity {
+        int attempts,failures;
+        boolean securityFailure;
+        Intent launched;
+        @Override public void startActivity(Intent intent){
+            attempts++;
+            if(attempts<=failures){
+                if(securityFailure)throw new SecurityException("Test: OEM blocked Settings");
+                throw new ActivityNotFoundException("Test: no Settings handler");
+            }
+            launched=intent;
+        }
+    }
+    private void verifySettingsFallbacks(){
+        for(PermissionSettings.Target target:PermissionSettings.Target.values()){
+            Intent[] intents=PermissionSettings.intents(getTargetContext(),target);
+            for(boolean security:new boolean[]{false,true}){
+                for(int failures=0;failures<=intents.length;failures++){
+                    LaunchProbe probe=new LaunchProbe();probe.failures=failures;probe.securityFailure=security;
+                    boolean opened=PermissionSettings.open(probe,intents);
+                    if(opened!=(failures<intents.length)||probe.attempts!=Math.min(failures+1,intents.length))throw new AssertionError("Broken fallback for "+target);
+                    if(opened&&probe.launched!=intents[failures])throw new AssertionError("Settings fallback order changed");
+                    assertions++;
+                }
+            }
+            if(!Settings.ACTION_SETTINGS.equals(intents[intents.length-1].getAction()))throw new AssertionError("Missing general Settings fallback");
+        }
+        Intent[] usage=PermissionSettings.intents(getTargetContext(),PermissionSettings.Target.USAGE);
+        if(!Settings.ACTION_USAGE_ACCESS_SETTINGS.equals(usage[1].getAction())||usage[1].getData()!=null)throw new AssertionError("Usage list fallback needs no package URI");
+        if(PermissionSettings.restore("unknown")!=null||PermissionSettings.restore(null)!=null)throw new AssertionError("Invalid restored target");
+        assertions+=2;
+    }
+    private void verifyUnavailableSettings(){
+        ActivityMonitor unavailable=new ActivityMonitor(){
+            @Override public ActivityResult onStartActivity(Intent intent){throw new ActivityNotFoundException("Test: all Settings handlers absent");}
+        };
+        addMonitor(unavailable);
+        tap("Open usage access");
+        removeMonitor(unavailable);
+        expect("Android could not open this settings screen.");
+        recreateAndAwait("Android could not open this settings screen.");
+        tap("Check permissions again");
+        expect("0 of 2 required permissions allowed");
+        absent("Start floating timer");
+        if(OverlayService.running)throw new AssertionError("Failed settings navigation started the timer");
+        assertions++;
     }
     private void awaitRunning(){
         long until=SystemClock.uptimeMillis()+5000;

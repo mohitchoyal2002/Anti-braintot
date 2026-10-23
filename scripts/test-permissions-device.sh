@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run only on a disposable emulator: resets the app's local test data and grants.
+# Run only on a disposable Android 15–17 emulator: resets test data and grants.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 sdk_path="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
@@ -9,7 +9,9 @@ bash scripts/build-permission-tests.sh
 version_name="$(sed -n 's/^versionName=//p' version.properties)"
 "$adb_path" install -r "build/sdk/TimeLens-$version_name-debug.apk"
 "$adb_path" install -r build/permission-tests/permission-tests.apk
-mkdir -p build/permission-evidence
+device_api="$("$adb_path" shell getprop ro.build.version.sdk | tr -d '\r')"
+evidence_path="build/permission-evidence/api-$device_api"
+mkdir -p "$evidence_path"
 
 run_case() {
   local scenario="$1" usage="$2" overlay="$3" notifications="$4"
@@ -19,13 +21,13 @@ run_case() {
   if [[ "$notifications" == allow ]]; then
     "$adb_path" shell pm grant work.timelens.app android.permission.POST_NOTIFICATIONS
   fi
-  "$adb_path" shell am instrument -w -e scenario "$scenario" work.timelens.app.test/work.timelens.app.PermissionFlowInstrumentation | tee "build/permission-evidence/$scenario.txt"
-  rg -q 'timelens_success=true' "build/permission-evidence/$scenario.txt" || { "$adb_path" logcat -d -t 2000 > "build/permission-evidence/$scenario-logcat.txt"; return 1; }
+  "$adb_path" shell am instrument -w -r -e scenario "$scenario" work.timelens.app.test/work.timelens.app.PermissionFlowInstrumentation | tee "${evidence_path}/$scenario.txt"
   # Collect screenshots before the next scenario clears app data.
   while IFS= read -r file; do
     [[ "$file" == qa-*.png ]] || continue
-    "$adb_path" exec-out run-as work.timelens.app cat "files/$file" > "build/permission-evidence/$scenario-$file"
-  done < <("$adb_path" shell run-as work.timelens.app ls files | tr -d '\r')
+    "$adb_path" exec-out run-as work.timelens.app cat "files/$file" > "${evidence_path}/$scenario-$file"
+  done < <("$adb_path" shell run-as work.timelens.app ls files 2>/dev/null | tr -d '\r')
+  grep -Fq 'INSTRUMENTATION_RESULT: timelens_success=true' "${evidence_path}/$scenario.txt" || { "$adb_path" logcat -d -t 2000 > "${evidence_path}/$scenario-logcat.txt"; return 1; }
 }
 
 "$adb_path" shell cmd uimode night no

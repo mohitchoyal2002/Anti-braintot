@@ -42,6 +42,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                 case "usage":
                     expect("Make time visible.");
                     expect("Know where your day goes");
+                    assertVisible("Open usage access");
                     capture("usage");
                     // Exercise an actual settings round trip without granting access.
                     tap("Open usage access");
@@ -66,6 +67,10 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("1 of 3 permissions allowed");
                     verifyIntent("Allow floating timer",Settings.ACTION_MANAGE_OVERLAY_PERMISSION,true);
                     capture("overlay");
+                    shell("input keyevent KEYCODE_BACK");
+                    await("Continue permission setup");
+                    tap("Continue permission setup");
+                    expect("Keep the total in sight");
                     break;
                 case "notifications":
                     expect("A quick way to stop");
@@ -88,6 +93,10 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("Your time, in focus.");
                     absent("SET UP TIMELENS");
                     capture("dashboard");
+                    tap("History");
+                    expect("YOUR RECENT DAYS");
+                    shell("input keyevent KEYCODE_BACK");
+                    await("Your time, in focus.");
                     // A real OS revocation must reopen setup on return.
                     shell("input keyevent KEYCODE_HOME");
                     shell("appops set work.timelens.app GET_USAGE_STATS deny");
@@ -136,6 +145,16 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     }
     private void expect(String text){if(!contains(text))throw new AssertionError("Missing text: "+text);assertions++;}
     private void absent(String text){if(contains(text))throw new AssertionError("Unexpected text: "+text);assertions++;}
+    private void assertVisible(String label){
+        boolean[] visible={false};
+        runOnMainSync(()->{
+            View button=find(activity.getWindow().getDecorView(),label,true);
+            android.graphics.Rect area=new android.graphics.Rect();
+            visible[0]=button!=null&&button.getGlobalVisibleRect(area)&&area.height()>=button.getHeight();
+        });
+        if(!visible[0])throw new AssertionError("Primary action is below the visible screen: "+label);
+        assertions++;
+    }
     private void await(String text){
         long until=SystemClock.uptimeMillis()+8000;
         while(SystemClock.uptimeMillis()<until){waitForIdleSync();if(contains(text)){assertions++;return;}SystemClock.sleep(100);}
@@ -144,6 +163,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     private void tap(String text){
         runOnMainSync(()->{
             View target=find(activity.getWindow().getDecorView(),text,true);
+            while(target!=null&&!target.isClickable()&&target.getParent() instanceof View)target=(View)target.getParent();
             if(target==null||!target.isClickable())throw new AssertionError("Missing action: "+text);
             if(!target.performClick())throw new AssertionError("Action failed: "+text);
         });

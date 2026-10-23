@@ -118,7 +118,7 @@ public final class OverlayService extends Service {
         else { android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);bounds=new android.graphics.Rect(0,0,m.widthPixels,m.heightPixels); }
         return bounds;
     }
-    private int overlayWidth(){return Math.min(getResources().getDisplayMetrics().widthPixels-Ui.dp(this,16),Ui.dp(this,205*Math.max(1,Math.min(1.5f,getResources().getConfiguration().fontScale))));}
+    private int overlayWidth(){return Math.max(Ui.dp(this,48),Math.min(screenBounds().width()-Ui.dp(this,16),Ui.dp(this,205*Math.max(1,Math.min(1.5f,getResources().getConfiguration().fontScale)))));}
     private int maxX(){return Math.max(Ui.dp(this,8),screenBounds().width()-layout.width-Ui.dp(this,8));}
     private int maxY(){return Math.max(Ui.dp(this,28),screenBounds().height()-Math.max(pill==null?0:pill.getHeight(),Ui.dp(this,76))-Ui.dp(this,56));}
     private void clamp() {

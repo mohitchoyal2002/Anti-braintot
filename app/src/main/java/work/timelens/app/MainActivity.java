@@ -32,6 +32,8 @@ public final class MainActivity extends Activity {
     private boolean visible;
     private int tab;
     private ScheduledFuture<?> refreshJob;
+    private android.window.OnBackInvokedCallback backCallback;
+    private boolean backRegistered;
     private final List<TextView> tabs=new ArrayList<>();
     private final List<ImageView> tabIcons=new ArrayList<>();
     private final List<LinearLayout> tabSurfaces=new ArrayList<>();
@@ -42,7 +44,9 @@ public final class MainActivity extends Activity {
         Ui.configure(this);
         getWindow().setStatusBarColor(Ui.BG);
         getWindow().setNavigationBarColor(Ui.BG);
-        getWindow().getDecorView().setSystemUiVisibility(Ui.dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        if(Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(false);
+        else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|(Ui.dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
+        if(Build.VERSION.SDK_INT>=33)backCallback=()->{if(setupVisible)leaveSetup();else if(tab!=0)showTab(0);};
         repository=UsageRepository.get(this);
         if(state!=null){
             setupVisible=state.getBoolean("setup");
@@ -52,11 +56,17 @@ public final class MainActivity extends Activity {
             showRecovery=state.getBoolean("recovery");
             notificationsSkipped=state.getBoolean("notificationsSkipped");
             notificationRequestInFlight=state.getBoolean("requestInFlight");
-            permissionFeedback=state.getString("permissionFeedback");
         }
         LinearLayout root=Ui.column(this); root.setBackgroundColor(Ui.BG);
         root.setOnApplyWindowInsetsListener((v,insets)->{
-            v.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom());return insets;
+            if(Build.VERSION.SDK_INT>=30){
+                Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            }else{
+                DisplayCutout cutout=insets.getDisplayCutout();
+                v.setPadding(Math.max(insets.getSystemWindowInsetLeft(),cutout==null?0:cutout.getSafeInsetLeft()),insets.getSystemWindowInsetTop(),Math.max(insets.getSystemWindowInsetRight(),cutout==null?0:cutout.getSafeInsetRight()),insets.getSystemWindowInsetBottom());
+            }
+            return insets;
         });
         LinearLayout brand=Ui.row(this);brand.setPadding(dp(24),dp(18),dp(24),dp(12));
         ImageView mark=new ImageView(this);mark.setImageResource(R.drawable.ic_launcher);brand.addView(mark,new LinearLayout.LayoutParams(dp(30),dp(30)));
@@ -74,6 +84,10 @@ public final class MainActivity extends Activity {
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(dp(3),0,dp(3),0);nav.addView(surface,cell);tabs.add(t);tabIcons.add(symbol);tabSurfaces.add(surface);
         }
         root.addView(nav);setContentView(root);root.requestApplyInsets();
+        if(Build.VERSION.SDK_INT>=30){
+            WindowInsetsController controller=getWindow().getInsetsController();
+            if(controller!=null)controller.setSystemBarsAppearance(Ui.dark?0:WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+        }
         if(Build.VERSION.SDK_INT>=33)registerReceiver(timerState,new IntentFilter(OverlayService.STATE_CHANGED),Context.RECEIVER_NOT_EXPORTED);else registerReceiver(timerState,new IntentFilter(OverlayService.STATE_CHANGED));
         tab=state==null?0:state.getInt("tab",0);
     }
@@ -81,10 +95,12 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         visible=true;
-        permissions=PermissionState.read(this);
+        PermissionState actual=PermissionState.read(this);
+        if(!actual.sameAs(permissions))permissionFeedback=null;
+        permissions=actual;
         if(usageSettingsPending){
             showRecovery=!permissions.usage;
-            permissionFeedback=permissions.usage?null:"Usage access is still off. If the switch was blocked, follow the steps below.";
+            permissionFeedback=permissions.usage?null:"Usage access is still off.";
             usageSettingsPending=false;
         }
         externalSettings=false;
@@ -121,6 +137,7 @@ public final class MainActivity extends Activity {
         super.onStop();
     }
     @Override protected void onDestroy() {
+        if(Build.VERSION.SDK_INT>=33&&backRegistered)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
         visible=false;main.removeCallbacksAndMessages(null);unregisterReceiver(timerState);worker.shutdown();super.onDestroy();
     }
     @Override public void onSaveInstanceState(Bundle out){
@@ -132,7 +149,6 @@ public final class MainActivity extends Activity {
         out.putBoolean("recovery",showRecovery);
         out.putBoolean("notificationsSkipped",notificationsSkipped);
         out.putBoolean("requestInFlight",notificationRequestInFlight);
-        out.putString("permissionFeedback",permissionFeedback);
         super.onSaveInstanceState(out);
     }
     @Override public void onBackPressed(){
@@ -155,6 +171,7 @@ public final class MainActivity extends Activity {
     }
     private void renderSetup(){
         clearPage();navigation.setVisibility(View.GONE);
+        updateBackCallback();
         PermissionSetup.build(this,page,permissions,showRecovery,notificationsSkipped,permissionFeedback,new PermissionSetup.Actions(){
             public void usage(){usageSettings();}
             public void overlay(){overlaySettings();}
@@ -168,6 +185,7 @@ public final class MainActivity extends Activity {
     }
     private void showTab(int index) {
         tab=index;setupVisible=false;navigation.setVisibility(View.VISIBLE);clearPage();
+        updateBackCallback();
         for(int i=0;i<tabs.size();i++){
             boolean selected=i==tab;
             tabs.get(i).setTextColor(selected?Ui.LIME:Ui.MUTED);
@@ -176,6 +194,14 @@ public final class MainActivity extends Activity {
             tabSurfaces.get(i).setSelected(selected);
         }
         if(index==0)buildToday();else if(index==1)buildHistory();else buildSettings();
+    }
+    private void updateBackCallback(){
+        if(Build.VERSION.SDK_INT<33)return;
+        boolean intercept=setupVisible||tab!=0;
+        if(intercept==backRegistered)return;
+        if(intercept)getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,backCallback);
+        else getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        backRegistered=intercept;
     }
     private void heading(String eyebrow,String title,String subtitle) {
         page.addView(Ui.text(this,eyebrow,11,Ui.LIME,true));Ui.gap(page,10);page.addView(Ui.text(this,title,32,Ui.INK,true));Ui.gap(page,8);

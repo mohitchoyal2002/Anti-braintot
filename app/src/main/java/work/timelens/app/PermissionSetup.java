@@ -28,17 +28,11 @@ final class PermissionSetup {
         Ui.gap(page, 12);
         page.addView(Ui.text(c, ready ? "A little awareness.\nMore choice." : "Make time visible.", 32, Ui.INK, true));
         Ui.gap(page, 12);
-        page.addView(Ui.text(c, "See your total screen time and time in each app. Your activity stays on this phone.", 16, Ui.MUTED, false));
+        page.addView(Ui.text(c, "Your time across every app. Kept on your phone.", 16, Ui.MUTED, false));
         Ui.gap(page, 24);
 
-        LinearLayout checklist = Ui.card(c);
-        checklist.addView(Ui.text(c, state.grantedCount() + " of 3 permissions allowed", 14, Ui.MUTED, true));
-        Ui.gap(checklist, 16);
-        permissionRow(c, checklist, "1", "Usage access", state.usage, false);
-        permissionRow(c, checklist, "2", "Display over apps", state.overlay, false);
-        permissionRow(c, checklist, "3", "Timer notifications", state.notifications, true);
-        page.addView(checklist);
-        Ui.gap(page, 16);
+        page.addView(Ui.text(c, state.grantedCount() + " of 3 permissions allowed", 14, Ui.MUTED, true));
+        Ui.gap(page, 12);
 
         LinearLayout detail = Ui.card(c);
         if (feedback != null) {
@@ -49,20 +43,19 @@ final class PermissionSetup {
         }
         switch (step) {
             case USAGE:
-                title(c, detail, "Know where your day goes", "Usage access lets TimeLens read which app was active and for how long. It does not read messages or record your screen.");
                 if (recovery) {
-                    detail.addView(Ui.text(c, "Is the switch blocked?", 18, Ui.INK, true));
-                    Ui.gap(detail, 8);
-                    detail.addView(Ui.text(c, "If Android says “App was denied access” or “Controlled by restricted setting”, you must confirm restricted settings yourself.", 15, Ui.MUTED, false));
-                    Ui.gap(detail, 14);
-                    detail.addView(Ui.text(c, "1. Open App info below.\n2. Tap ⋮ at the top right.\n3. Choose Allow restricted settings and follow Android’s confirmation.\n4. Return here and open Usage access again.", 16, Ui.INK, false));
-                    Ui.gap(detail, 12);
-                    detail.addView(Ui.text(c, "Only allow this for an app you trust. If the menu is missing, your phone’s security settings or administrator may control access. TimeLens cannot change that setting.", 14, Ui.MUTED, false));
+                    title(c, detail, "Is the switch blocked?", "If Android says “App was denied access” or “Controlled by restricted setting”, confirm restricted settings on your phone.");
+                    detail.addView(Ui.text(c, "App info → ⋮ → Allow restricted settings", 16, Ui.INK, true));
+                    Ui.gap(detail, 10);
+                    detail.addView(Ui.text(c, "Follow Android’s confirmation, then return here and open Usage access again.", 16, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                     detail.addView(Ui.button(c, "Open App info", true, actions::appInfo));
                     Ui.gap(detail, 10);
                     detail.addView(Ui.button(c, "Open usage access", false, actions::usage));
+                    Ui.gap(detail, 16);
+                    detail.addView(Ui.text(c, "Only allow apps you trust. If the menu is missing, your phone’s security settings or administrator may control access. TimeLens cannot change that setting.", 14, Ui.MUTED, false));
                 } else {
+                    title(c, detail, "Know where your day goes", "Usage access lets TimeLens read which app was active and for how long. It does not read messages or record your screen.");
                     detail.addView(Ui.text(c, "On the next screen, select TimeLens if shown, then turn on Allow usage access.", 15, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                     detail.addView(Ui.button(c, "Open usage access", true, actions::usage));
@@ -96,6 +89,14 @@ final class PermissionSetup {
         page.addView(detail);
         Ui.gap(page, 14);
         page.addView(Ui.button(c, ready ? "View dashboard" : "Not now · view dashboard", false, actions::dashboard));
+        Ui.gap(page, 24);
+        LinearLayout checklist = Ui.card(c);
+        checklist.addView(Ui.text(c, "Your access", 18, Ui.INK, true));
+        Ui.gap(checklist, 8);
+        permissionRow(c, checklist, "1", "Usage access", state.usage, false);
+        permissionRow(c, checklist, "2", "Display over apps", state.overlay, false);
+        permissionRow(c, checklist, "3", "Timer notifications", state.notifications, true);
+        page.addView(checklist);
         Ui.gap(page, 18);
         LinearLayout privacy = Ui.row(c);
         ImageView icon = new ImageView(c);

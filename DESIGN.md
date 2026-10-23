@@ -6,7 +6,7 @@ The interface applies the [Apple Design skill linked in the user's guide](https:
 
 ## Design thesis
 
-Make actual app time visible, with a short, understandable route through Android's permission controls. The signature is the reference ring and small live timer; permission setup uses a quiet checklist with written status and a single next action. Recovery is part of setup, not a help page people must discover elsewhere.
+Make actual app time visible, with a short, understandable route through Android's permission controls. The signature is the reference ring and small live timer; permission setup uses a quiet checklist with written status and a single next action. Recovery is part of setup, not a help page people must discover elsewhere. The current request and its action precede the full access checklist so the next step is visible sooner.
 
 ## Semantic color tokens
 
@@ -46,4 +46,4 @@ Press feedback begins on touch down and uses a critically damped scalar spring. 
 
 ## Verification
 
-See [PERMISSION_UX_REVIEW.md](PERMISSION_UX_REVIEW.md) for the audit and platform boundary. The workflow records Android 15 permission-flow checks and screenshots, including light appearance and dark setup at 200% font scale. Its result is the authority on whether those scenarios passed. The Samsung restricted-settings confirmation, TalkBack traversal, battery behavior and motion feel require checking on the actual phone.
+See [PERMISSION_UX_REVIEW.md](PERMISSION_UX_REVIEW.md) for the audit and platform boundary. The workflow records Android 15–17 permission-flow checks and screenshots, including light appearance and dark setup at 200% font scale. Its result is the authority on whether those scenarios passed. The Samsung restricted-settings confirmation, TalkBack traversal, battery behavior and motion feel require checking on the actual phone.

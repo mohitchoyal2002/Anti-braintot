@@ -8,7 +8,7 @@ A native Android screen-time dashboard and a draggable timer that stays above ot
 
 Open [Build Android APK](https://github.com/mohitchoyal2002/Anti-braintot/actions/workflows/android-apk.yml), select the latest successful run and download **TimeLens-0.2.0-debug.apk** from **Artifacts** or the run summary's download link. Sign in to GitHub to download artifacts. The artifact is the APK itself, so no ZIP extraction is needed.
 
-The workflow runs on pushes to `main`, pull requests, or **Run workflow** manually. It installs JDK 17 and the Android 35 SDK, runs the counting checks, compiles/signs the APK with the SDK-only script, verifies its signature, and runs permission-flow instrumentation on an Android 15 emulator before publishing the APK. Downloads are retained for 30 days; test screenshots and logs are retained for 14 days. No repository secrets are required for this personal debug build. Each clean run generates its own development signing key; you may need to uninstall a previous debug build before installing a later run, which also removes local history. A fixed private signing secret can be configured later for persistent installs; no production signing key is checked in.
+The workflow runs on pushes to `main`, pull requests, or **Run workflow** manually. It installs JDK 17 and the Android 35 SDK, runs the counting checks, compiles/signs the APK with the SDK-only script, verifies its signature, and runs permission-flow instrumentation on Android 15, 16 and 17 emulators before publishing the APK. Downloads are retained for 30 days; test screenshots and logs are retained for 14 days. No repository secrets are required for this personal debug build. Each clean run generates its own development signing key; you may need to uninstall a previous debug build before installing a later run, which also removes local history. A fixed private signing secret can be configured later for persistent installs; no production signing key is checked in.
 
 ## Install the personal test build
 
@@ -40,6 +40,14 @@ The new setup includes an App info shortcut and these instructions. Returning fr
 - Native Java UI, Android UsageStatsManager, a user-started foreground service, WindowManager and SQLite. No third-party runtime libraries.
 - No account, backend, Internet permission, AccessibilityService, screen capture, microphone or chat access.
 
+## Android 15, 16 and 17 compatibility
+
+The same APK is exercised on Android 15 (API 35), Android 16 (API 36) and Android 17 (API 37; Google’s stable image package `android-37.0`) before download publication. The workflow tests permissions, Settings recovery, optional notifications, actual foreground timer start/stop, permission revocation, system Back, and dark setup with large text on each OS. Evidence is grouped by API level.
+
+Minimum SDK remains 29, with no maximum SDK restriction. Compile/target SDK remains 35; the APK uses public APIs available on all three requested OS versions. Running on a newer Android version does not require its newest target SDK. Native `OnBackInvokedDispatcher` handles Back on Android 13+; edge-to-edge insets include navigation, status bars and display cutouts; overlay width uses current window bounds. The timer starts from an explicit visible activity action and uses the declared `specialUse` foreground-service type. No boot-time foreground-service start is attempted.
+
+An emulator pass verifies the covered flows, not every manufacturer’s battery or restricted-setting behavior. Samsung’s approval is still performed by the phone owner in Android settings.
+
 ## Counting definition and limits
 
 Screen time here means the union of time intervals owned by the latest resumed app while the screen is interactive and unlocked. TimeLens itself and Settings count as apps; the launcher/home screen, Android System UI and lock screen do not. Background music with the screen off does not count.
@@ -69,10 +77,10 @@ The project can also be opened in Android Studio. A standard Gradle wrapper is i
 - 23 executable domain assertions: app switches, old-activity pauses, screen/lock intervals, carried sessions across midnight, duplicate events, stop/shutdown/startup boundaries, daylight-saving days, exclusive query ends and bounded total duration.
 - All app sources compiled against the public Android 35 API; resources linked, Java bytecode converted to DEX and APK signature verified.
 - Binary manifest inspected for package/version, minimum/target SDK, launcher activity and permissions. No Internet or accessibility permission is declared.
-- The workflow runs six native Android 15 instrumentation scenarios: denied Usage access and Settings return/recovery; usage-granted/overlay-missing; optional notifications with foreground timer start/stop; all grants followed by revocation; disabled notification channel; dark setup at 200% font scale. Logs and screenshots are available in **permission-test-evidence**. Check the run’s result rather than assuming a pending run passed.
+- The workflow runs six native instrumentation scenarios on each of Android 15 (API 35), 16 (API 36) and 17 (API 37): denied Usage access and Settings return/recovery; usage-granted/overlay-missing; optional notifications with foreground timer start/stop; all grants followed by revocation; disabled notification channel; dark setup at 200% font scale. Logs and screenshots are available in **permission-test-evidence**. Check the run’s result rather than assuming a pending run passed.
 - Samsung’s restricted-settings confirmation requires testing and approval on the actual phone; the emulator does not reproduce that manufacturer/security state. Battery consumption and numerical parity with Digital Wellbeing have not been measured.
 
-To run permission tests locally, start a disposable Android 15 emulator, build the app, then run `bash scripts/test-permissions-device.sh`. This deliberately clears TimeLens test data and modifies grants on the emulator; the script refuses a physical phone. Version name/code are defined once in `version.properties` for both Gradle and SDK builds.
+To run permission tests locally, start a disposable Android 15, 16 or 17 emulator, build the app, then run `bash scripts/test-permissions-device.sh`. This deliberately clears TimeLens test data and modifies grants on the emulator; the script refuses a physical phone. Version name/code are defined once in `version.properties` for both Gradle and SDK builds.
 
 ## Main files
 

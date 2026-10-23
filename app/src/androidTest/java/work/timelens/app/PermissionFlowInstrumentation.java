@@ -1,6 +1,7 @@
 package work.timelens.app;
 
 import android.app.Activity;
+import android.app.Application;
 import android.app.Instrumentation;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -25,6 +26,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     private Activity activity;
     private int assertions;
     private final StringBuilder shellTrace=new StringBuilder();
+    private volatile boolean activityResumed=true;
 
     @Override public void onCreate(Bundle args) { arguments=args;start(); }
 
@@ -38,6 +40,15 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
             }
             activity=startActivitySync(new Intent(getTargetContext(),MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+            runOnMainSync(()->activity.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks(){
+                public void onActivityCreated(Activity a,Bundle saved){}
+                public void onActivityStarted(Activity a){}
+                public void onActivityResumed(Activity a){if(a==activity)activityResumed=true;}
+                public void onActivityPaused(Activity a){if(a==activity)activityResumed=false;}
+                public void onActivityStopped(Activity a){}
+                public void onActivitySaveInstanceState(Activity a,Bundle saved){}
+                public void onActivityDestroyed(Activity a){}
+            }));
             waitForIdleSync();
             switch(scenario){
                 case "usage":
@@ -47,7 +58,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     capture("usage");
                     // Exercise an actual settings round trip without granting access.
                     tap("Open usage access");
-                    SystemClock.sleep(500);
+                    awaitPaused();
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Is the switch blocked?");
                     expect("Usage access is still off.");
@@ -59,6 +70,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     tap("Continue permission setup");
                     expect("Is the switch blocked?");
                     shell("input keyevent KEYCODE_HOME");
+                    awaitPaused();
                     shell("appops set work.timelens.app GET_USAGE_STATS allow");
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Keep the total in sight");
@@ -86,7 +98,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     awaitStopped();
                     // Skipping lasts this visit; another foreground visit offers setup again.
                     shell("input keyevent KEYCODE_HOME");
-                    SystemClock.sleep(300);
+                    awaitPaused();
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("A quick way to stop");
                     break;
@@ -100,6 +112,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     await("Your time, in focus.");
                     // A real OS revocation must reopen setup on return.
                     shell("input keyevent KEYCODE_HOME");
+                    awaitPaused();
                     shell("appops set work.timelens.app GET_USAGE_STATS deny");
                     shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Know where your day goes");
@@ -161,6 +174,12 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         long until=SystemClock.uptimeMillis()+8000;
         while(SystemClock.uptimeMillis()<until){waitForIdleSync();if(contains(text)){assertions++;return;}SystemClock.sleep(100);}
         throw new AssertionError("Did not return to: "+text);
+    }
+    private void awaitPaused(){
+        long until=SystemClock.uptimeMillis()+10000;
+        while(activityResumed&&SystemClock.uptimeMillis()<until)SystemClock.sleep(50);
+        if(activityResumed)throw new AssertionError("Android did not leave the app after the navigation action");
+        assertions++;
     }
     private void tap(String text){
         runOnMainSync(()->{

@@ -26,7 +26,7 @@ public final class OverlayService extends Service {
     private KeyguardManager keyguard;
     private String namedPackage,appLabel;
     private long notificationMinute=-1;
-    private boolean shuttingDown;
+    private boolean shuttingDown,windowAdded;
     private SpringValue settleX,settleY;
     private final BroadcastReceiver displayReceiver=new BroadcastReceiver() {
         @Override public void onReceive(Context c,Intent i) { if(!power.isInteractive() || keyguard.isKeyguardLocked()) hide(); else requestRefresh(); }
@@ -126,7 +126,7 @@ public final class OverlayService extends Service {
         return edge+(overshoot*dimension*0.55f)/(dimension+0.55f*Math.abs(overshoot));
     }
     private void moveWindow(){
-        try{if(pill!=null&&pill.isAttachedToWindow())windows.updateViewLayout(pill,layout);}catch(IllegalArgumentException ignored){}
+        try{if(pill!=null&&windowAdded)windows.updateViewLayout(pill,layout);}catch(IllegalArgumentException ignored){}
     }
     private void savePosition(){
         Ui.prefs(this).edit().putInt("overlay_x",layout.x).putInt("overlay_y",layout.y).apply();
@@ -143,16 +143,26 @@ public final class OverlayService extends Service {
             pill.post(()->{clamp();moveWindow();savePosition();});
         }
         if(!power.isInteractive() || keyguard.isKeyguardLocked() || !Settings.canDrawOverlays(this)) {hide();return;}
-        if(!pill.isAttachedToWindow()) { try {clamp();windows.addView(pill,layout);}catch(RuntimeException e){stopSelf();return;} }
+        if(!windowAdded) {
+            try {
+                clamp();windows.addView(pill,layout);
+                // Registration precedes View attachment. A refresh can arrive before
+                // the first frame; isAttachedToWindow() would add the same view twice.
+                windowAdded=true;
+            }catch(RuntimeException e){android.util.Log.e("TimeLens","Could not attach floating timer",e);stopSelf();return;}
+        }
         UsageRepository.Snapshot s=snapshot; if(s==null)return;
         long extra=s.usage.activePackage!=null && s.issue==null && s.day.equals(java.time.LocalDate.now())?Math.max(0,Math.min(3000,System.currentTimeMillis()-s.asOf)):0;
         String pkg=s.usage.activePackage;
         if(!java.util.Objects.equals(namedPackage,pkg) || appLabel==null) {namedPackage=pkg;appLabel=Ui.appName(this,pkg);}
-        pill.update(s.usage.total+extra,appLabel,s.usage.perApp.getOrDefault(pkg,0L)+extra,s.issue!=null);
+        pill.update(s.usage.total+extra,pkg==null?null:appLabel,s.usage.perApp.getOrDefault(pkg,0L)+extra,s.issue!=null);
         long minute=(s.usage.total+extra)/60000;
         if(minute!=notificationMinute) {notificationMinute=minute;getSystemService(NotificationManager.class).notify(1,notification(s.usage.total+extra));}
     }
-    private void hide() {if(settleX!=null)settleX.stop();if(settleY!=null)settleY.stop();if(pill!=null && pill.isAttachedToWindow()) try{windows.removeView(pill);}catch(IllegalArgumentException ignored){} }
+    private void hide() {
+        if(settleX!=null)settleX.stop();if(settleY!=null)settleY.stop();
+        if(pill!=null&&windowAdded){try{windows.removeView(pill);}catch(IllegalArgumentException ignored){}finally{windowAdded=false;}}
+    }
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);hide();Ui.configure(this);
         if(running){createPill();render();}

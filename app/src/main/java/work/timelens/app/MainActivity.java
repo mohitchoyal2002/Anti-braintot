@@ -350,7 +350,7 @@ public final class MainActivity extends Activity {
         preview.setExpanded(expanded);
         long total=snapshot==null?0:snapshot.usage.total;
         String active=snapshot==null?null:snapshot.usage.activePackage;
-        preview.update(total,Ui.appName(this,active),snapshot==null?0:snapshot.usage.perApp.getOrDefault(active,0L),snapshot!=null&&snapshot.issue!=null);
+        preview.update(total,active==null?null:Ui.appName(this,active),snapshot==null?0:snapshot.usage.perApp.getOrDefault(active,0L),snapshot!=null&&snapshot.issue!=null);
         int available=Math.max(dp(48),getResources().getDisplayMetrics().widthPixels-dp(96));
         LinearLayout.LayoutParams previewSize=new LinearLayout.LayoutParams(TimerCapsule.width(this,expanded,available),-2);
         previewSize.gravity=Gravity.CENTER_HORIZONTAL;appearance.addView(preview,previewSize);

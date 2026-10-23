@@ -84,8 +84,8 @@ final class TimerCapsule extends LinearLayout {
 
     void update(long totalMs,String name,long appMs,boolean waiting) {
         total.setText(Ui.duration(totalMs));
-        appName.setText(waiting?"Usage data unavailable":name);
-        appDuration.setText(waiting?"Open TimeLens to review access":Ui.duration(appMs)+" in this app today");
+        appName.setText(waiting?"Usage data unavailable":name==null?"Between apps":name);
+        appDuration.setText(waiting?"Open TimeLens to review access":name==null?"Your timer is paused":Ui.duration(appMs)+" in this app today");
         spokenTime="Screen time today, "+Ui.duration(totalMs)+
                 (expanded?". "+appName.getText()+", "+appDuration.getText():"");
         updateDescription();

@@ -38,6 +38,18 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: 'false'
 
+      - name: Use pinned Android tools for emulators
+        run: |
+          # emulator-runner prepends cmdline-tools/latest; the runner's preinstalled
+          # version cannot read current Android 17 SDK/image metadata.
+          tools_path="$ANDROID_HOME/cmdline-tools"
+          test -x "$tools_path/16111833/bin/avdmanager"
+          if [[ -e "$tools_path/latest" || -L "$tools_path/latest" ]]; then
+            mv "$tools_path/latest" "$tools_path/preinstalled-before-timelens"
+          fi
+          ln -s "$tools_path/16111833" "$tools_path/latest"
+          cat "$tools_path/latest/source.properties"
+
       - name: Verify counting logic
         run: bash scripts/test-counting.sh
 
@@ -55,6 +67,8 @@ jobs:
         with:
           # Google's stable Android 17 SDK/image package is named 37.0.
           api-level: '37.0'
+          # Modern software rendering avoids the legacy DMA/readback crash in SurfaceFlinger.
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none -feature -Vulkan
           avd-name: timelens-api-37-0
           disk-size: 6G
           ram-size: 4096M

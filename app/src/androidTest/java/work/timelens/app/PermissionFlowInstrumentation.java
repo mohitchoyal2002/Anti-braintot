@@ -6,7 +6,7 @@ import android.app.Instrumentation;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
-import android.content.IntentFilter;
+import android.content.ActivityNotFoundException;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 /** Device-level regression checks; no external test framework or fake grant reader. */
 public final class PermissionFlowInstrumentation extends Instrumentation {
     private Bundle arguments;
-    private Activity activity;
+    private volatile Activity activity;
     private int assertions;
     private final StringBuilder shellTrace=new StringBuilder();
     private volatile boolean activityResumed=true;
@@ -47,7 +47,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
             activity=startActivitySync(new Intent(getTargetContext(),MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
             runOnMainSync(()->activity.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks(){
-                public void onActivityCreated(Activity a,Bundle saved){}
+                public void onActivityCreated(Activity a,Bundle saved){if(a instanceof MainActivity){activity=a;activityResumed=false;}}
                 public void onActivityStarted(Activity a){}
                 public void onActivityResumed(Activity a){if(a==activity)activityResumed=true;}
                 public void onActivityPaused(Activity a){if(a==activity)activityResumed=false;}
@@ -60,16 +60,30 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                 case "usage":
                     expect("Make time visible.");
                     expect("Know where your day goes");
+                    expect("0 of 2 required permissions allowed");
+                    expect("Still needed: Usage access and Display over apps.");
                     assertVisible("Open usage access");
+                    tap("Check permissions again");
+                    expect("Still needed: Usage access and Display over apps.");
+                    if(OverlayService.running)throw new AssertionError("Checking access started the timer");
+                    assertions++;
                     capture("usage");
                     // Exercise an actual settings round trip without granting access.
                     tap("Open usage access");
                     awaitPaused();
-                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    // Recreate while Settings is on top: the pending target must survive.
+                    runOnMainSync(()->activity.recreate());
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Is the switch blocked?");
                     expect("Usage access is still off.");
                     expect("Allow restricted settings");
+                    recreateAndAwait("Usage access is still off.");
                     verifyIntent("Open App info",Settings.ACTION_APPLICATION_DETAILS_SETTINGS,true);
+                    tap("Open App info");
+                    awaitPaused();
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    await("Back from App info.");
+                    expect("Allowing restricted settings alone does not grant Usage access.");
                     capture("recovery");
                     tap("Not now · view dashboard");
                     expect("Continue permission setup");
@@ -78,13 +92,20 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     shell("input keyevent KEYCODE_HOME");
                     awaitPaused();
                     shell("appops set work.timelens.app GET_USAGE_STATS allow");
-                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Keep the total in sight");
+                    expect("Still needed: Display over apps.");
                     break;
                 case "overlay":
                     expect("Keep the total in sight");
-                    expect("1 of 3 permissions allowed");
+                    expect("1 of 2 required permissions allowed");
                     verifyIntent("Open display settings",Settings.ACTION_MANAGE_OVERLAY_PERMISSION,true);
+                    tap("Open display settings");
+                    awaitPaused();
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    await("Display over apps is still off.");
+                    recreateAndAwait("Display over apps is still off.");
+                    expect("Still needed: Display over apps.");
                     capture("overlay");
                     shell("input keyevent KEYCODE_BACK");
                     await("Continue permission setup");
@@ -105,14 +126,14 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     // Skipping lasts this visit; another foreground visit offers setup again.
                     shell("input keyevent KEYCODE_HOME");
                     awaitPaused();
-                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("A quick way to stop");
                     break;
                 case "complete":
                     expect("App activity");
                     absent("SET UP TIMELENS");
                     capture("dashboard");
-                    tap("History");
+                    tapNavigation(R.id.nav_history);
                     expect("Your last seven days");
                     shell("input keyevent KEYCODE_BACK");
                     await("App activity");
@@ -120,13 +141,17 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     shell("input keyevent KEYCODE_HOME");
                     awaitPaused();
                     shell("appops set work.timelens.app GET_USAGE_STATS deny");
-                    shell("am start --activity-reorder-to-front -n work.timelens.app/.MainActivity");
+                    shell("am start -W --activity-reorder-to-front -n work.timelens.app/.MainActivity");
                     await("Know where your day goes");
                     break;
                 case "channel":
                     expect("A quick way to stop");
-                    expect("2 of 3 permissions allowed");
-                    verifyIntent("Set up notifications",Settings.ACTION_APP_NOTIFICATION_SETTINGS,false);
+                    expect("2 of 2 required permissions allowed");
+                    verifyIntent("Set up notifications",Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS,false);
+                    break;
+                case "settings":
+                    onMainChecked(this::verifySettingsFallbacks);
+                    verifyUnavailableSettings();
                     break;
                 case "large":
                     expect("Know where your day goes");
@@ -140,15 +165,15 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("App activity");
                     auditCurrentLayout();
                     capture("today");
-                    tap("History");await("Yesterday");capture("history");
+                    tapNavigation(R.id.nav_history);await("Yesterday");capture("history");
                     await("View app activity");tap("View app activity →");
                     verifyDayDialog();
-                    tap("Settings");expect("Quiet by default.");
+                    tapNavigation(R.id.nav_settings);expect("Quiet by default.");
                     auditCurrentLayout();
                     capture("settings");
                     if("design".equals(scenario))verifyFeedbackSettings();
                     verifyAppIcon();
-                    tap("Today");tap("Start floating timer");awaitRunning();
+                    tapNavigation(R.id.nav_today);tap("Start floating timer");awaitRunning();
                     shell("input keyevent KEYCODE_HOME");awaitPaused();
                     verifyCapsule("design-large".equals(scenario));
                     runOnMainSync(()->activity.stopService(new Intent(activity,OverlayService.class)));
@@ -168,6 +193,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     }
 
     private View find(View view,String text,boolean exact){
+        if(view.getVisibility()!=View.VISIBLE)return null;
         if(view instanceof TextView){
             String value=((TextView)view).getText().toString();
             if(exact?value.equals(text):value.contains(text))return view;
@@ -181,9 +207,9 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         return null;
     }
     private boolean contains(String text){
-        boolean[] found={false};runOnMainSync(()->found[0]=find(activity.getWindow().getDecorView(),text,false)!=null);return found[0];
+        boolean[] found={false};runOnMainSync(()->found[0]=activityResumed&&activity.hasWindowFocus()&&find(activity.getWindow().getDecorView(),text,false)!=null);return found[0];
     }
-    private void expect(String text){if(!contains(text))throw new AssertionError("Missing text: "+text);assertions++;}
+    private void expect(String text){await(text);}
     private void absent(String text){if(contains(text))throw new AssertionError("Unexpected text: "+text);assertions++;}
     private void assertVisible(String label){
         boolean[] visible={false};
@@ -202,12 +228,18 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     }
     private void awaitPaused(){
         long until=SystemClock.uptimeMillis()+10000;
-        while(activityResumed&&SystemClock.uptimeMillis()<until)SystemClock.sleep(50);
-        if(activityResumed)throw new AssertionError("Android did not leave the app after the navigation action");
-        assertions++;
+        while(SystemClock.uptimeMillis()<until){
+            if(!activityResumed){
+                AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+                if(root!=null&&!getTargetContext().getPackageName().contentEquals(String.valueOf(root.getPackageName()))){assertions++;return;}
+            }
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("Android did not finish opening the external screen");
     }
     private void tap(String text){
-        runOnMainSync(()->{
+        awaitAppFocus();
+        onMainChecked(()->{
             View target=find(activity.getWindow().getDecorView(),text,true);
             while(target!=null&&!target.isClickable()&&target.getParent() instanceof View)target=(View)target.getParent();
             if(target==null||!target.isClickable())throw new AssertionError("Missing action: "+text);
@@ -215,13 +247,102 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         });
         waitForIdleSync();assertions++;
     }
+    private void onMainChecked(Runnable action){
+        Throwable[] failure={null};
+        runOnMainSync(()->{try{action.run();}catch(Throwable error){failure[0]=error;}});
+        if(failure[0]!=null)throw new AssertionError("UI action failed",failure[0]);
+    }
+    private void tapNavigation(int id){
+        awaitAppFocus();
+        onMainChecked(()->{
+            View target=activity.findViewById(id);
+            if(target==null||!target.isShown()||!target.isClickable())throw new AssertionError("Navigation action is unavailable: "+id);
+            if(!target.performClick()||!target.isSelected())throw new AssertionError("Navigation did not select: "+id);
+        });
+        waitForIdleSync();assertions++;
+    }
+    private void awaitAppFocus(){
+        long until=SystemClock.uptimeMillis()+10000;
+        while(SystemClock.uptimeMillis()<until){
+            boolean[] focused={false};runOnMainSync(()->focused[0]=activityResumed&&activity.hasWindowFocus());
+            if(focused[0])return;
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("TimeLens did not regain foreground focus");
+    }
     private void verifyIntent(String text,String action,boolean packageData){
-        IntentFilter filter=new IntentFilter(action);
-        if(packageData)filter.addDataScheme("package");
-        ActivityMonitor monitor=addMonitor(filter,null,true);
+        Intent[] launched={null};
+        ActivityMonitor monitor=new ActivityMonitor(){
+            @Override public ActivityResult onStartActivity(Intent intent){
+                launched[0]=new Intent(intent);
+                return new ActivityResult(Activity.RESULT_CANCELED,null);
+            }
+        };
+        addMonitor(monitor);
         tap(text);
-        if(monitor.getHits()!=1)throw new AssertionError("Wrong settings intent for "+text);
-        assertions++;removeMonitor(monitor);
+        removeMonitor(monitor);
+        if(launched[0]==null||!action.equals(launched[0].getAction()))throw new AssertionError("Wrong settings intent for "+text);
+        if(packageData&&!"package:work.timelens.app".equals(launched[0].getDataString()))throw new AssertionError("Wrong Settings package");
+        if(Settings.ACTION_APP_NOTIFICATION_SETTINGS.equals(action)||Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS.equals(action)){
+            if(!"work.timelens.app".equals(launched[0].getStringExtra(Settings.EXTRA_APP_PACKAGE)))throw new AssertionError("Missing notification package");
+        }
+        if(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS.equals(action)&&!"timer".equals(launched[0].getStringExtra(Settings.EXTRA_CHANNEL_ID)))throw new AssertionError("Wrong notification channel");
+        assertions++;
+    }
+    private void recreateAndAwait(String text){
+        Activity previous=activity;
+        runOnMainSync(previous::recreate);
+        long until=SystemClock.uptimeMillis()+8000;
+        while((activity==previous||!activityResumed)&&SystemClock.uptimeMillis()<until)SystemClock.sleep(50);
+        if(activity==previous)throw new AssertionError("Activity was not recreated");
+        await(text);
+    }
+    private static final class LaunchProbe extends Activity {
+        int attempts,failures;
+        boolean securityFailure;
+        Intent launched;
+        @Override public void startActivity(Intent intent){
+            attempts++;
+            if(attempts<=failures){
+                if(securityFailure)throw new SecurityException("Test: OEM blocked Settings");
+                throw new ActivityNotFoundException("Test: no Settings handler");
+            }
+            launched=intent;
+        }
+    }
+    private void verifySettingsFallbacks(){
+        for(PermissionSettings.Target target:PermissionSettings.Target.values()){
+            Intent[] intents=PermissionSettings.intents(getTargetContext(),target);
+            for(boolean security:new boolean[]{false,true}){
+                for(int failures=0;failures<=intents.length;failures++){
+                    LaunchProbe probe=new LaunchProbe();probe.failures=failures;probe.securityFailure=security;
+                    boolean opened=PermissionSettings.open(probe,intents);
+                    if(opened!=(failures<intents.length)||probe.attempts!=Math.min(failures+1,intents.length))throw new AssertionError("Broken fallback for "+target);
+                    if(opened&&probe.launched!=intents[failures])throw new AssertionError("Settings fallback order changed");
+                    assertions++;
+                }
+            }
+            if(!Settings.ACTION_SETTINGS.equals(intents[intents.length-1].getAction()))throw new AssertionError("Missing general Settings fallback");
+        }
+        Intent[] usage=PermissionSettings.intents(getTargetContext(),PermissionSettings.Target.USAGE);
+        if(!Settings.ACTION_USAGE_ACCESS_SETTINGS.equals(usage[1].getAction())||usage[1].getData()!=null)throw new AssertionError("Usage list fallback needs no package URI");
+        if(PermissionSettings.restore("unknown")!=null||PermissionSettings.restore(null)!=null)throw new AssertionError("Invalid restored target");
+        assertions+=2;
+    }
+    private void verifyUnavailableSettings(){
+        ActivityMonitor unavailable=new ActivityMonitor(){
+            @Override public ActivityResult onStartActivity(Intent intent){throw new ActivityNotFoundException("Test: all Settings handlers absent");}
+        };
+        addMonitor(unavailable);
+        tap("Open usage access");
+        removeMonitor(unavailable);
+        expect("Android could not open this settings screen.");
+        recreateAndAwait("Android could not open this settings screen.");
+        tap("Check permissions again");
+        expect("0 of 2 required permissions allowed");
+        absent("Start floating timer");
+        if(OverlayService.running)throw new AssertionError("Failed settings navigation started the timer");
+        assertions++;
     }
     private void awaitRunning(){
         long until=SystemClock.uptimeMillis()+5000;
@@ -276,14 +397,25 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         if(expandedBounds.height()<=compactBounds.height())throw new AssertionError("App detail did not expand");
         assertions++;capture("capsule-expanded");
         if(!capsule(true).performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new AssertionError("Cannot collapse capsule");
-        compactBounds=capsuleBounds(capsule(false));
+        android.graphics.Rect originalBounds=new android.graphics.Rect(compactBounds);
+        long collapsedUntil=SystemClock.uptimeMillis()+4000;
+        do{
+            compactBounds=capsuleBounds(capsule(false));
+            if(compactBounds.height()<=originalBounds.height()&&compactBounds.width()==originalBounds.width())break;
+            SystemClock.sleep(100);
+        }while(SystemClock.uptimeMillis()<collapsedUntil);
+        if(compactBounds.height()>originalBounds.height()||compactBounds.width()!=originalBounds.width())throw new AssertionError("Timer did not finish collapsing");
+        if(compactBounds.left>originalBounds.left+Ui.dp(activity,4))throw new AssertionError("Expand/collapse moved the timer to the opposite edge");
+        waitForIdleSync();assertions+=2;
         int originalX=Ui.prefs(getTargetContext()).getInt("overlay_x",Ui.dp(activity,16));
+        int originalY=Ui.prefs(getTargetContext()).getInt("overlay_y",Ui.dp(activity,100));
         int displayWidth=getTargetContext().getResources().getDisplayMetrics().widthPixels;
         int displayHeight=getTargetContext().getResources().getDisplayMetrics().heightPixels;
-        shell("input touchscreen swipe "+compactBounds.centerX()+" "+compactBounds.centerY()+" "+(displayWidth-Ui.dp(activity,32))+" "+(compactBounds.centerY()+Ui.dp(activity,120))+" 450");
+        int targetX=compactBounds.centerX()<displayWidth/2?displayWidth-Ui.dp(activity,32):Ui.dp(activity,32);
+        shell("input touchscreen swipe "+compactBounds.centerX()+" "+compactBounds.centerY()+" "+targetX+" "+(compactBounds.centerY()+Ui.dp(activity,120))+" 450");
         long until=SystemClock.uptimeMillis()+5000;
-        while(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX&&SystemClock.uptimeMillis()<until)SystemClock.sleep(100);
-        if(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX)throw new AssertionError("Drag position was not saved");
+        while(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX&&Ui.prefs(getTargetContext()).getInt("overlay_y",originalY)==originalY&&SystemClock.uptimeMillis()<until)SystemClock.sleep(100);
+        if(Ui.prefs(getTargetContext()).getInt("overlay_x",originalX)==originalX&&Ui.prefs(getTargetContext()).getInt("overlay_y",originalY)==originalY)throw new AssertionError("Drag position was not saved");
         android.graphics.Rect moved=capsuleBounds(capsule(false));
         if(moved.left<0||moved.top<0||moved.right>displayWidth||moved.bottom>displayHeight)throw new AssertionError("Capsule moved outside the display");
         assertions+=2;capture("capsule-docked");

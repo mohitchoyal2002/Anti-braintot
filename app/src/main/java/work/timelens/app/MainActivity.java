@@ -5,9 +5,7 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.*;
-import android.net.Uri;
 import android.os.*;
-import android.provider.Settings;
 import android.view.*;
 import android.widget.*;
 import java.time.*;
@@ -26,13 +24,16 @@ public final class MainActivity extends Activity {
     private ScrollView scroll;
     private PermissionState permissions;
     private boolean setupVisible, dismissedSetupThisVisit, externalSettings;
-    private boolean usageSettingsPending, showRecovery, notificationsSkipped, notificationRequestInFlight;
+    private boolean showRecovery, notificationsSkipped, notificationRequestInFlight;
+    private PermissionSettings.Target pendingSettings;
+    private int restoredPermissionGrants=-1;
     private String permissionFeedback;
     private TextView todayTotal,currentApp,status,toggle,empty,reference;
     private ReferenceTrack ring;
     private UsageRepository repository;
     private UsageRepository.Snapshot snapshot;
     private boolean visible;
+    private final Runnable permissionRecheck=()->{if(visible&&!isDestroyed())refreshPermissions(false);};
     private int tab;
     private ScheduledFuture<?> refreshJob;
     private android.window.OnBackInvokedCallback backCallback;
@@ -55,10 +56,12 @@ public final class MainActivity extends Activity {
             setupVisible=state.getBoolean("setup");
             dismissedSetupThisVisit=state.getBoolean("dismissed");
             externalSettings=state.getBoolean("external");
-            usageSettingsPending=state.getBoolean("usagePending");
+            pendingSettings=PermissionSettings.restore(state.getString("pendingSettings"));
             showRecovery=state.getBoolean("recovery");
             notificationsSkipped=state.getBoolean("notificationsSkipped");
             notificationRequestInFlight=state.getBoolean("requestInFlight");
+            permissionFeedback=state.getString("permissionFeedback");
+            restoredPermissionGrants=state.getInt("permissionGrants",-1);
         }
         LinearLayout root=Ui.readingColumn(this); root.setBackgroundColor(Ui.BG);
         root.setOnApplyWindowInsetsListener((v,insets)->{
@@ -79,9 +82,11 @@ public final class MainActivity extends Activity {
         page=Ui.column(this);page.setPadding(dp(24),dp(10),dp(24),dp(24));scroll.addView(page);FrameLayout region=new FrameLayout(this);region.addView(scroll,new FrameLayout.LayoutParams(-1,-1));root.addView(region,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout nav=Ui.row(this);nav.setPadding(dp(8),dp(4),dp(8),dp(4));
         String[] labels={"Today","History","Settings"};
+        int[] navIds={R.id.nav_today,R.id.nav_history,R.id.nav_settings};
         int[] symbols={R.drawable.ic_today,R.drawable.ic_history,R.drawable.ic_settings};
         for(int i=0;i<labels.length;i++) {
             final int index=i;LinearLayout surface=Ui.column(this);surface.setGravity(Gravity.CENTER);surface.setPadding(dp(8),dp(10),dp(8),dp(10));surface.setMinimumHeight(dp(60));
+            surface.setId(navIds[i]);
             ImageView symbol=new ImageView(this);symbol.setImageResource(symbols[i]);surface.addView(symbol,new LinearLayout.LayoutParams(dp(22),dp(22)));Ui.gap(surface,6);
             TextView t=Ui.text(this,labels[i],12,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);t.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);surface.setFocusable(true);surface.setOnClickListener(v->{if(tab!=index){showTab(index);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);Ui.enter(page);}if(Ui.animationsEnabled())scroll.smoothScrollTo(0,0);else scroll.scrollTo(0,0);});
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(dp(3),0,dp(3),0);nav.addView(surface,cell);tabs.add(t);tabIcons.add(symbol);tabSurfaces.add(surface);
@@ -104,35 +109,35 @@ public final class MainActivity extends Activity {
         super.onResume();
         visible=true;
         PermissionState resumedState=PermissionState.read(this);
-        if(!resumedState.sameAs(permissions))permissionFeedback=null;
+        if((permissions!=null&&!resumedState.sameAs(permissions))
+                ||(restoredPermissionGrants>=0&&restoredPermissionGrants!=resumedState.grantMask()))permissionFeedback=null;
+        restoredPermissionGrants=-1;
         permissions=resumedState;
-        if(usageSettingsPending){
-            showRecovery=!permissions.usage;
-            permissionFeedback=permissions.usage?null:"Usage access is still off.";
-            usageSettingsPending=false;
+        if(permissions.usage)showRecovery=false;
+        if(pendingSettings!=null){
+            settingsReturned(pendingSettings);
+            pendingSettings=null;
         }
         externalSettings=false;
         if(!dismissedSetupThisVisit && !permissions.complete())setupVisible=true;
         renderCurrent();
+        // Settings/AppOps changes can arrive just after onResume on an OEM build.
+        // These bounded retries also cover returning with an unchanged activity instance.
+        schedulePermissionRechecks();
         if(refreshJob!=null)refreshJob.cancel(false);
         refreshJob=worker.scheduleWithFixedDelay(()->{
             UsageRepository.Snapshot s=repository.refresh();
             main.post(()->{
                 if(!visible||isDestroyed())return;
                 snapshot=s;
-                PermissionState actual=PermissionState.read(this);
-                if(!actual.sameAs(permissions)){
-                    permissions=actual;
-                    permissionFeedback=null;
-                    if(!dismissedSetupThisVisit&&!actual.complete())setupVisible=true;
-                    renderCurrent();
-                }
+                refreshPermissions(false);
                 if(!setupVisible&&tab==0)updateToday();
             });
         },0,2,TimeUnit.SECONDS);
     }
     @Override protected void onPause() {
         visible=false;
+        main.removeCallbacks(permissionRecheck);
         // A quick app switch can resume without onStop on newer Android releases.
         if(!externalSettings&&!notificationRequestInFlight&&!isChangingConfigurations()){
             dismissedSetupThisVisit=false;
@@ -152,10 +157,12 @@ public final class MainActivity extends Activity {
         out.putBoolean("setup",setupVisible);
         out.putBoolean("dismissed",dismissedSetupThisVisit);
         out.putBoolean("external",externalSettings);
-        out.putBoolean("usagePending",usageSettingsPending);
+        out.putString("pendingSettings",pendingSettings==null?null:pendingSettings.name());
         out.putBoolean("recovery",showRecovery);
         out.putBoolean("notificationsSkipped",notificationsSkipped);
         out.putBoolean("requestInFlight",notificationRequestInFlight);
+        out.putString("permissionFeedback",permissionFeedback);
+        if(permissions!=null)out.putInt("permissionGrants",permissions.grantMask());
         super.onSaveInstanceState(out);
     }
     @Override public void onBackPressed(){
@@ -168,6 +175,58 @@ public final class MainActivity extends Activity {
         todayTotal=null;currentApp=null;status=null;toggle=null;empty=null;reference=null;ring=null;appList=null;content=null;
     }
     private void renderCurrent(){if(setupVisible)renderSetup();else showTab(tab);}
+    private void schedulePermissionRechecks(){
+        main.removeCallbacks(permissionRecheck);
+        main.postDelayed(permissionRecheck,250);
+        main.postDelayed(permissionRecheck,750);
+        main.postDelayed(permissionRecheck,1500);
+    }
+    @Override public void onWindowFocusChanged(boolean focused){
+        super.onWindowFocusChanged(focused);
+        if(focused&&visible)schedulePermissionRechecks();
+    }
+    private void refreshPermissions(boolean manual){
+        PermissionState actual=PermissionState.read(this);
+        boolean changed=!actual.sameAs(permissions);
+        permissions=actual;
+        if(changed){
+            permissionFeedback=null;
+            if(actual.usage)showRecovery=false;
+            if(!dismissedSetupThisVisit&&!actual.complete())setupVisible=true;
+        }
+        if(manual){
+            permissionFeedback=actual.requiredStatus()+(!actual.notifications?" Timer notifications are off · optional.":"");
+        }
+        if(changed||manual){
+            renderCurrent();
+            if(setupVisible)scroll.scrollTo(0,0);
+        }
+    }
+    private void settingsReturned(PermissionSettings.Target target){
+        permissionFeedback=null;
+        if(permissions.usage)showRecovery=false;
+        if(target!=PermissionSettings.Target.APP_INFO){
+            setupVisible=true;dismissedSetupThisVisit=false;
+        }
+        if(setupVisible)scroll.scrollTo(0,0);
+        switch(target){
+            case USAGE:
+                showRecovery=!permissions.usage;
+                permissionFeedback=permissions.usage?"Usage access is allowed.":"Usage access is still off. If you left without enabling it, try again. If Android blocked the switch, use the recovery steps below.";
+                break;
+            case OVERLAY:
+                permissionFeedback=permissions.overlay?"Display over apps is allowed.":"Display over apps is still off. Select TimeLens in Android’s list and enable Allow display over other apps, then return here.";
+                break;
+            case NOTIFICATIONS:
+            case NOTIFICATION_CHANNEL:
+                permissionFeedback=permissions.notifications?"Timer notifications are allowed.":"Timer notifications are still off. Check both app notifications and the Live screen-time timer category, or continue without them.";
+                break;
+            case APP_INFO:
+                if(showRecovery&&!permissions.usage)
+                    permissionFeedback="Back from App info. Open Usage access again and enable TimeLens. Allowing restricted settings alone does not grant Usage access.";
+                break;
+        }
+    }
     private void openSetup(){
         setupVisible=true;dismissedSetupThisVisit=false;permissionFeedback=null;permissions=PermissionState.read(this);
         scroll.smoothScrollTo(0,0);renderSetup();
@@ -185,6 +244,7 @@ public final class MainActivity extends Activity {
             public void notifications(){notificationSettings();}
             public void appInfo(){appInfoSettings();}
             public void recovery(){showRecovery=true;permissionFeedback=null;renderSetup();}
+            public void recheck(){refreshPermissions(true);}
             public void skipNotifications(){notificationsSkipped=true;permissionFeedback=null;renderSetup();scroll.smoothScrollTo(0,0);}
             public void dashboard(){leaveSetup();}
             public void start(){leaveSetup();startTimer();}
@@ -243,7 +303,7 @@ public final class MainActivity extends Activity {
         LinearLayout card=Ui.card(this);
         card.addView(Ui.text(this,state.canTrack()?"Floating timer":"Finish setting up",18,Ui.INK,true));
         Ui.gap(card,8);
-        card.addView(Ui.text(this,state.canTrack()?"A small clock and today’s total. Tap it for your current app’s time.":"Allow Usage access for your app breakdown and Display over apps for the floating timer.",17,Ui.MUTED,false));
+        card.addView(Ui.text(this,state.canTrack()?"A small clock and today’s total. Tap it for your current app’s time.":state.requiredStatus(),17,Ui.MUTED,false));
         Ui.gap(card,16);
         if(!state.canTrack()){
             card.addView(Ui.button(this,"Continue permission setup",true,this::openSetup));
@@ -372,7 +432,7 @@ public final class MainActivity extends Activity {
         preview.setOnClickListener(v->details.performClick());
         Ui.gap(appearance,8);
         appearance.addView(Ui.text(this,"Tap the timer to expand or collapse. Drag it to an edge. Stop it from Today or the notification.",14,Ui.MUTED,false));Ui.gap(appearance,16);
-        appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));
+        appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").remove("overlay_right").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));
         page.addView(appearance);Ui.gap(page,16);
         LinearLayout goal=Ui.card(this);goal.addView(Ui.text(this,"Daily reference",20,Ui.INK,true));Ui.gap(goal,8);
         goal.addView(Ui.text(this,"A personal reference for your day. It never blocks apps.",17,Ui.MUTED,false));Ui.gap(goal,16);
@@ -412,15 +472,13 @@ public final class MainActivity extends Activity {
         catch(PackageManager.NameNotFoundException e){return "";}
     }
     private void usageSettings(){
-        usageSettingsPending=true;permissionFeedback=null;
-        openSettings(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+        openSettings(PermissionSettings.Target.USAGE);
     }
     private void overlaySettings(){
-        permissionFeedback=null;
-        openSettings(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+        openSettings(PermissionSettings.Target.OVERLAY);
     }
     private void appInfoSettings(){
-        openSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())),new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+        openSettings(PermissionSettings.Target.APP_INFO);
     }
     private void notificationSettings(){
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED
@@ -429,27 +487,26 @@ public final class MainActivity extends Activity {
             Ui.prefs(this).edit().putBoolean("notifications_requested",true).apply();
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},30);
         }else{
-            openSettings(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()),new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));
+            PermissionState actual=PermissionState.read(this);
+            openSettings(actual.notificationChannelBlocked?PermissionSettings.Target.NOTIFICATION_CHANNEL:PermissionSettings.Target.NOTIFICATIONS);
         }
     }
     @Override public void onRequestPermissionsResult(int code,String[] names,int[] results){
         super.onRequestPermissionsResult(code,names,results);
         if(code!=30)return;
         notificationRequestInFlight=false;
+        setupVisible=true;dismissedSetupThisVisit=false;
         permissions=PermissionState.read(this);
         permissionFeedback=permissions.notifications?null:"Notifications are still off. Try again to review Android’s settings, or continue without them.";
         renderCurrent();
     }
-    private void openSettings(Intent intent,Intent fallback){
-        externalSettings=true;
-        try{startActivity(intent);}
-        catch(ActivityNotFoundException|SecurityException e){
-            try{startActivity(fallback);}
-            catch(ActivityNotFoundException|SecurityException unavailable){
-                externalSettings=false;usageSettingsPending=false;
-                permissionFeedback="This settings screen is unavailable. Open Android Settings → Apps → TimeLens to review access.";
-                setupVisible=true;permissions=PermissionState.read(this);renderSetup();
-            }
+    private void openSettings(PermissionSettings.Target target){
+        permissionFeedback=null;pendingSettings=target;externalSettings=true;
+        if(!PermissionSettings.open(this,PermissionSettings.intents(this,target))){
+            externalSettings=false;pendingSettings=null;
+            permissions=PermissionState.read(this);
+            permissionFeedback="Android could not open this settings screen. Open Settings → Apps → Special app access for Usage access or Display over other apps. For notifications or restricted settings, open Apps → TimeLens. Return here and tap Check permissions again.";
+            setupVisible=true;renderSetup();
         }
     }
     private void startTimer(){

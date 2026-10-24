@@ -1,0 +1,5 @@
+<resources>
+    <item name="nav_today" type="id" />
+    <item name="nav_history" type="id" />
+    <item name="nav_settings" type="id" />
+</resources>

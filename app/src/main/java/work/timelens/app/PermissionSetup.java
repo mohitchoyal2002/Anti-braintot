@@ -15,6 +15,7 @@ final class PermissionSetup {
         void notifications();
         void appInfo();
         void recovery();
+        void recheck();
         void skipNotifications();
         void dashboard();
         void start();
@@ -31,7 +32,9 @@ final class PermissionSetup {
         page.addView(Ui.text(c, "Screen time, at a glance. Your data stays on this phone.", 17, Ui.MUTED, false));
         Ui.gap(page, 24);
 
-        page.addView(Ui.text(c, state.grantedCount() + " of 3 permissions allowed", 14, Ui.MUTED, true));
+        page.addView(Ui.text(c, state.requiredGrantedCount() + " of 2 required permissions allowed", 14, Ui.MUTED, true));
+        Ui.gap(page, 8);
+        page.addView(Ui.text(c, state.requiredStatus(), 15, Ui.MUTED, false));
         Ui.gap(page, 12);
 
         LinearLayout detail = Ui.card(c);
@@ -47,7 +50,7 @@ final class PermissionSetup {
                     title(c, detail, "Is the switch blocked?", "If Android says “App was denied access” or “Controlled by restricted setting”, confirm restricted settings on your phone.");
                     detail.addView(Ui.text(c, "App info → ⋮ → Allow restricted settings", 16, Ui.INK, true));
                     Ui.gap(detail, 10);
-                    detail.addView(Ui.text(c, "Follow Android’s confirmation, then return here and open Usage access again.", 17, Ui.MUTED, false));
+                    detail.addView(Ui.text(c, "Follow Android’s confirmation, then return here and open Usage access again. Allowing restricted settings does not turn on Usage access.", 17, Ui.MUTED, false));
                     Ui.gap(detail, 18);
                     detail.addView(Ui.button(c, "Open App info", true, actions::appInfo));
                     Ui.gap(detail, 10);
@@ -62,12 +65,16 @@ final class PermissionSetup {
                     Ui.gap(detail, 10);
                     detail.addView(Ui.button(c, "Usage switch disabled?", false, actions::recovery));
                 }
+                Ui.gap(detail, 14);
+                detail.addView(Ui.text(c, "If Android opens a list, select TimeLens. You can also find it in Settings → Apps → Special app access → Usage access (or Usage data access).", 14, Ui.MUTED, false));
                 break;
             case OVERLAY:
                 title(c, detail, "Keep the total in sight", "Display over other apps lets a small clock and today’s total stay in view. Tap the timer when you want your current app’s time.");
                 detail.addView(Ui.text(c, "On the next screen, choose TimeLens and turn on Allow display over other apps. You can stop the timer at any time.", 17, Ui.MUTED, false));
                 Ui.gap(detail, 18);
                 detail.addView(Ui.button(c, "Open display settings", true, actions::overlay));
+                Ui.gap(detail, 14);
+                detail.addView(Ui.text(c, "If the app page does not open, use Settings → Apps → Special app access → Display over other apps → TimeLens.", 14, Ui.MUTED, false));
                 break;
             case NOTIFICATIONS:
                 title(c, detail, "A quick way to stop", "Allow the timer notification to see that TimeLens is running and stop it from your notification shade.");
@@ -86,6 +93,8 @@ final class PermissionSetup {
                 detail.addView(Ui.button(c, "Start floating timer", true, actions::start));
                 break;
         }
+        Ui.gap(detail, 10);
+        detail.addView(Ui.button(c, "Check permissions again", false, actions::recheck));
         page.addView(detail);
         Ui.gap(page, 14);
         page.addView(Ui.button(c, ready ? "View dashboard" : "Not now · view dashboard", false, actions::dashboard));

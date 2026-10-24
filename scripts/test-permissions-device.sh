@@ -28,8 +28,12 @@ for attempt in {1..30}; do
   sleep 2
 done
 [[ "$package_ready" == true ]] || { printf '%s\n' 'Android package manager did not become ready.' >&2; exit 1; }
-bash scripts/build-permission-tests.sh
 version_name="$(sed -n 's/^versionName=//p' version.properties)"
+if [[ "${TIMELENS_TEST_APK_PREBUILT:-false}" == true ]]; then
+  [[ -s "build/sdk/TimeLens-$version_name-debug.apk" && -s build/permission-tests/permission-tests.apk ]] || { printf '%s\n' 'Missing prebuilt app or instrumentation APK.' >&2; exit 1; }
+else
+  bash scripts/build-permission-tests.sh
+fi
 # A complete streaming install avoids incremental-filesystem startup races.
 "$adb_path" install --no-incremental -r "build/sdk/TimeLens-$version_name-debug.apk"
 "$adb_path" install --no-incremental -r build/permission-tests/permission-tests.apk

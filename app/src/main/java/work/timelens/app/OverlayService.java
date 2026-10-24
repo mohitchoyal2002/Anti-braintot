@@ -28,7 +28,7 @@ public final class OverlayService extends Service {
     private KeyguardManager keyguard;
     private String namedPackage,appLabel;
     private long notificationMinute=-1;
-    private boolean shuttingDown,windowAdded;
+    private boolean shuttingDown,windowAdded,rightDocked;
     private SpringValue settleX,settleY;
     private final BroadcastReceiver displayReceiver=new BroadcastReceiver() {
         @Override public void onReceive(Context c,Intent i) { if(!power.isInteractive() || keyguard.isKeyguardLocked()) hide(); else requestRefresh(); }
@@ -49,7 +49,7 @@ public final class OverlayService extends Service {
             Ui.prefs(this).edit().putBoolean("enabled",false).apply(); stopSelf(); return START_NOT_STICKY;
         }
         if(intent!=null && RESET_POSITION.equals(intent.getAction()) && running) {
-            settleX.stop();settleY.stop();layout.x=Ui.dp(this,16);layout.y=Ui.dp(this,100);clamp();moveWindow();savePosition();return START_STICKY;
+            settleX.stop();settleY.stop();rightDocked=false;layout.x=Ui.dp(this,16);layout.y=Ui.dp(this,100);clamp();moveWindow();savePosition();return START_STICKY;
         }
         if(!repository.hasUsageAccess() || !Settings.canDrawOverlays(this)) { Ui.prefs(this).edit().putBoolean("enabled",false).apply(); stopSelf(); return START_NOT_STICKY; }
         if(Build.VERSION.SDK_INT>=34) startForeground(1,notification(0),ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE); else startForeground(1,notification(0));
@@ -82,6 +82,8 @@ public final class OverlayService extends Service {
         pill.setExpanded(!Ui.prefs(this).getBoolean("compact",true));
         layout=new WindowManager.LayoutParams(overlayWidth(),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,PixelFormat.TRANSLUCENT);
         layout.gravity=Gravity.TOP|Gravity.START; layout.x=Ui.prefs(this).getInt("overlay_x",Ui.dp(this,16)); layout.y=Ui.prefs(this).getInt("overlay_y",Ui.dp(this,100));
+        rightDocked=Ui.prefs(this).getBoolean("overlay_right",layout.x>=(Ui.dp(this,8)+maxX())/2f);
+        if(rightDocked)layout.x=maxX();
         floatingWindow.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
         floatingWindow.getWindow().setAttributes(layout);floatingWindow.getWindow().setWindowAnimations(0);
         material=new WindowMaterial(visual,floatingWindow.getWindow(),false);
@@ -104,7 +106,7 @@ public final class OverlayService extends Service {
                         return true;
                     case MotionEvent.ACTION_UP:
                         pill.setPressed(false);
-                        if(moved){velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();float projected=layout.x+vx*0.099f;float targetX=projected>(Ui.dp(OverlayService.this,8)+maxX())/2f?maxX():Ui.dp(OverlayService.this,8);float targetY=Math.max(Ui.dp(OverlayService.this,28),Math.min(maxY(),layout.y+vy*0.06f));settleX.release(layout.x,targetX,vx);settleY.release(layout.y,targetY,vy);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);}else v.performClick();
+                        if(moved){velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();float projected=layout.x+vx*0.099f;rightDocked=projected>(Ui.dp(OverlayService.this,8)+maxX())/2f;float targetX=rightDocked?maxX():Ui.dp(OverlayService.this,8);float targetY=Math.max(Ui.dp(OverlayService.this,28),Math.min(maxY(),layout.y+vy*0.06f));settleX.release(layout.x,targetX,vx);settleY.release(layout.y,targetY,vy);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);}else v.performClick();
                         velocity.recycle();velocity=null;return true;
                     case MotionEvent.ACTION_CANCEL:
                         pill.setPressed(false);clamp();moveWindow();savePosition();if(velocity!=null){velocity.recycle();velocity=null;}return true;
@@ -139,14 +141,15 @@ public final class OverlayService extends Service {
         try{if(pill!=null&&windowAdded)floatingWindow.getWindow().setAttributes(layout);}catch(IllegalArgumentException ignored){}
     }
     private void savePosition(){
-        Ui.prefs(this).edit().putInt("overlay_x",layout.x).putInt("overlay_y",layout.y).apply();
+        Ui.prefs(this).edit().putInt("overlay_x",layout.x).putInt("overlay_y",layout.y).putBoolean("overlay_right",rightDocked).apply();
     }
     private void render() {
         if(!running || pill==null) return;
         boolean expanded=!Ui.prefs(this).getBoolean("compact",true);
         int width=overlayWidth();
         if(width!=layout.width||expanded!=pill.isExpanded()){
-            boolean rightDocked=layout.x>=maxX()-Ui.dp(this,4);
+            // A full-width expanded timer touches both edges. Preserve its chosen
+            // dock rather than inferring the side from that temporary geometry.
             pill.setExpanded(expanded);layout.width=width;
             settleX.stop();settleY.stop();if(rightDocked)layout.x=maxX();clamp();moveWindow();
             // Height is known after the expanded detail is laid out.

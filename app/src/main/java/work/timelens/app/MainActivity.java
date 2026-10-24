@@ -432,7 +432,7 @@ public final class MainActivity extends Activity {
         preview.setOnClickListener(v->details.performClick());
         Ui.gap(appearance,8);
         appearance.addView(Ui.text(this,"Tap the timer to expand or collapse. Drag it to an edge. Stop it from Today or the notification.",14,Ui.MUTED,false));Ui.gap(appearance,16);
-        appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));
+        appearance.addView(Ui.button(this,"Reset timer position",false,()->{Ui.prefs(this).edit().remove("overlay_x").remove("overlay_y").remove("overlay_right").apply();if(OverlayService.running)startService(new Intent(this,OverlayService.class).setAction(OverlayService.RESET_POSITION));else Toast.makeText(this,"Position reset for next start",Toast.LENGTH_SHORT).show();}));
         page.addView(appearance);Ui.gap(page,16);
         LinearLayout goal=Ui.card(this);goal.addView(Ui.text(this,"Daily reference",20,Ui.INK,true));Ui.gap(goal,8);
         goal.addView(Ui.text(this,"A personal reference for your day. It never blocks apps.",17,Ui.MUTED,false));Ui.gap(goal,16);

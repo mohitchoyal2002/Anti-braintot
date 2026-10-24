@@ -133,7 +133,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("App activity");
                     absent("SET UP TIMELENS");
                     capture("dashboard");
-                    tap("History");
+                    tapNavigation(R.id.nav_history);
                     expect("Your last seven days");
                     shell("input keyevent KEYCODE_BACK");
                     await("App activity");
@@ -150,7 +150,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     verifyIntent("Set up notifications",Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS,false);
                     break;
                 case "settings":
-                    runOnMainSync(this::verifySettingsFallbacks);
+                    onMainChecked(this::verifySettingsFallbacks);
                     verifyUnavailableSettings();
                     break;
                 case "large":
@@ -165,15 +165,15 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
                     expect("App activity");
                     auditCurrentLayout();
                     capture("today");
-                    tap("History");await("Yesterday");capture("history");
+                    tapNavigation(R.id.nav_history);await("Yesterday");capture("history");
                     await("View app activity");tap("View app activity →");
                     verifyDayDialog();
-                    tap("Settings");expect("Quiet by default.");
+                    tapNavigation(R.id.nav_settings);expect("Quiet by default.");
                     auditCurrentLayout();
                     capture("settings");
                     if("design".equals(scenario))verifyFeedbackSettings();
                     verifyAppIcon();
-                    tap("Today");tap("Start floating timer");awaitRunning();
+                    tapNavigation(R.id.nav_today);tap("Start floating timer");awaitRunning();
                     shell("input keyevent KEYCODE_HOME");awaitPaused();
                     verifyCapsule("design-large".equals(scenario));
                     runOnMainSync(()->activity.stopService(new Intent(activity,OverlayService.class)));
@@ -193,6 +193,7 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
     }
 
     private View find(View view,String text,boolean exact){
+        if(view.getVisibility()!=View.VISIBLE)return null;
         if(view instanceof TextView){
             String value=((TextView)view).getText().toString();
             if(exact?value.equals(text):value.contains(text))return view;
@@ -232,11 +233,24 @@ public final class PermissionFlowInstrumentation extends Instrumentation {
         assertions++;
     }
     private void tap(String text){
-        runOnMainSync(()->{
+        onMainChecked(()->{
             View target=find(activity.getWindow().getDecorView(),text,true);
             while(target!=null&&!target.isClickable()&&target.getParent() instanceof View)target=(View)target.getParent();
             if(target==null||!target.isClickable())throw new AssertionError("Missing action: "+text);
             if(!target.performClick())throw new AssertionError("Action failed: "+text);
+        });
+        waitForIdleSync();assertions++;
+    }
+    private void onMainChecked(Runnable action){
+        Throwable[] failure={null};
+        runOnMainSync(()->{try{action.run();}catch(Throwable error){failure[0]=error;}});
+        if(failure[0]!=null)throw new AssertionError("UI action failed",failure[0]);
+    }
+    private void tapNavigation(int id){
+        onMainChecked(()->{
+            View target=activity.findViewById(id);
+            if(target==null||!target.isShown()||!target.isClickable())throw new AssertionError("Navigation action is unavailable: "+id);
+            if(!target.performClick()||!target.isSelected())throw new AssertionError("Navigation did not select: "+id);
         });
         waitForIdleSync();assertions++;
     }

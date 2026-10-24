@@ -82,9 +82,11 @@ public final class MainActivity extends Activity {
         page=Ui.column(this);page.setPadding(dp(24),dp(10),dp(24),dp(24));scroll.addView(page);FrameLayout region=new FrameLayout(this);region.addView(scroll,new FrameLayout.LayoutParams(-1,-1));root.addView(region,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout nav=Ui.row(this);nav.setPadding(dp(8),dp(4),dp(8),dp(4));
         String[] labels={"Today","History","Settings"};
+        int[] navIds={R.id.nav_today,R.id.nav_history,R.id.nav_settings};
         int[] symbols={R.drawable.ic_today,R.drawable.ic_history,R.drawable.ic_settings};
         for(int i=0;i<labels.length;i++) {
             final int index=i;LinearLayout surface=Ui.column(this);surface.setGravity(Gravity.CENTER);surface.setPadding(dp(8),dp(10),dp(8),dp(10));surface.setMinimumHeight(dp(60));
+            surface.setId(navIds[i]);
             ImageView symbol=new ImageView(this);symbol.setImageResource(symbols[i]);surface.addView(symbol,new LinearLayout.LayoutParams(dp(22),dp(22)));Ui.gap(surface,6);
             TextView t=Ui.text(this,labels[i],12,Ui.MUTED,true);surface.addView(t);surface.setContentDescription(labels[i]);symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);t.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);surface.setFocusable(true);surface.setOnClickListener(v->{if(tab!=index){showTab(index);Ui.haptic(v,HapticFeedbackConstants.CLOCK_TICK);Ui.enter(page);}if(Ui.animationsEnabled())scroll.smoothScrollTo(0,0);else scroll.scrollTo(0,0);});
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(dp(3),0,dp(3),0);nav.addView(surface,cell);tabs.add(t);tabIcons.add(symbol);tabSurfaces.add(surface);

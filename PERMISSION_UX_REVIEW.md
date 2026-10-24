@@ -52,3 +52,9 @@ On the Samsung S24 and a representative Android 15, 16 and 17 device/emulator:
 5. Start the timer explicitly. Revoke Usage access or overlay access externally, return, and verify missing-access UI and service shutdown. Test both gesture Back and switching back through Recents.
 
 References: [special permission lifecycle](https://developer.android.com/training/permissions/requesting-special), [Settings contracts](https://developer.android.com/reference/android/provider/Settings#ACTION_USAGE_ACCESS_SETTINGS), [AppOps API](https://developer.android.com/reference/android/app/AppOpsManager#checkOpNoThrow(java.lang.String,int,java.lang.String)), [Android 17 all-app changes](https://developer.android.com/about/versions/17/behavior-changes-all). Compile/target remain 35 and minSdk remains 29; no version-specific or hidden permission APIs are needed for this flow.
+
+### Installable 0.3.1 follow-up
+
+The PR's first complete CI run confirmed the seven permission scenarios on all three requested OS versions. Both design scenarios then failed because the test helper matched a hidden `Today` TextView in the settings timer preview and clicked its parent, rather than the bottom navigation. The application process was killed by an assertion thrown on its main thread; the logs did not establish a production navigation or overlay crash.
+
+Navigation now has stable resource IDs. Device tests select those controls, ignore hidden label subtrees, and return UI-action failures to the instrumentation thread so logs and failure screenshots remain available. Version 0.3.1 (code 4) identifies this fixed build. The full rerun includes live floating timer expansion, collapse, dragging and stopping at normal and 200% text sizes on Android 15, 16 and 17.

@@ -6,13 +6,13 @@ A native Android screen-time dashboard and a draggable timer that stays above ot
 
 ## Download the APK from GitHub
 
-Open [Build Android APK](https://github.com/mohitchoyal2002/Anti-braintot/actions/workflows/android-apk.yml), select the latest successful run and download **TimeLens-0.3.0-debug.apk** from **Artifacts** or the run summary's download link. Sign in to GitHub to download artifacts. The artifact is the APK itself, so no ZIP extraction is needed.
+Open [Build Android APK](https://github.com/mohitchoyal2002/Anti-braintot/actions/workflows/android-apk.yml), select the latest successful run and download **TimeLens-0.3.1-debug.apk** from **Artifacts** or the run summary's download link. Sign in to GitHub to download artifacts. The artifact is the APK itself, so no ZIP extraction is needed.
 
 The workflow runs on pushes to `main`, pull requests, or **Run workflow** manually. It installs JDK 17 and the Android 35 SDK, runs the counting checks, compiles/signs the APK with the SDK-only script, verifies its signature, and runs permission-flow instrumentation on Android 15, 16 and 17 emulators before publishing the APK. Downloads are retained for 30 days; test screenshots and logs are retained for 14 days. No repository secrets are required for this personal debug build. Each clean run generates its own development signing key; you may need to uninstall a previous debug build before installing a later run, which also removes local history. A fixed private signing secret can be configured later for persistent installs; no production signing key is checked in.
 
 ## Install the personal test build
 
-1. Install `TimeLens-0.3.0-debug.apk` on your Android phone (Android 10 or newer).
+1. Install `TimeLens-0.3.1-debug.apk` on your Android phone (Android 10 or newer).
 2. Open TimeLens. A guided setup appears whenever a permission is missing. Tap **Open usage access**, select TimeLens if needed, enable access, then return.
 3. If Android blocks the switch, follow **Usage switch disabled?** in setup: **Open App info → ⋮ → Allow restricted settings**, confirm in Android, return and open Usage access again. This is an Android security confirmation; TimeLens cannot grant or bypass it.
 4. Follow **Open display settings** to enable Display over apps. Return to TimeLens after each Settings change; it checks the actual grants. **Check permissions again** also refreshes the checklist without leaving the app. Choose whether to allow timer notifications (optional), then tap **Start floating timer**. **Not now** opens the dashboard; missing permissions remain visible and setup returns on the next visit.
@@ -75,7 +75,7 @@ bash scripts/test-counting.sh
 bash scripts/build-apk.sh
 ```
 
-The signed personal APK is written to `build/sdk/TimeLens-0.3.0-debug.apk`. This is the build path verified in this workspace. It uses the official SDK compiler/dex/resource/signing tools and avoids downloading Gradle dependencies. The generated `debug-signing/timelens-debug.keystore` is for personal development, uses the conventional `android` password, and must not be used for a store release. Keep your own copy if you want subsequent SDK-only builds to update an installed APK without uninstalling it.
+The signed personal APK is written to `build/sdk/TimeLens-0.3.1-debug.apk`. This is the build path verified in this workspace. It uses the official SDK compiler/dex/resource/signing tools and avoids downloading Gradle dependencies. The generated `debug-signing/timelens-debug.keystore` is for personal development, uses the conventional `android` password, and must not be used for a store release. Keep your own copy if you want subsequent SDK-only builds to update an installed APK without uninstalling it.
 
 The project can also be opened in Android Studio. A standard Gradle wrapper is included; on a normal development machine use `./gradlew :app:assembleDebug`. Android Gradle Plugin is pinned to 8.7.3 and Gradle to 8.9. The Gradle dependency-resolution path was blocked by this host's Java networking; it has not been reported as a passing build. Do not put this workspace's proxy settings into your machine's project.
 
